@@ -1,0 +1,14 @@
+node_modules/
+dist/
+work/
+outputs/
+.sites-runtime/
+test-results/
+playwright-report/
+*.log
+
+# Hosting identity is local to each deployment.
+.openai/
+.env
+.env.*
+!.env.example
