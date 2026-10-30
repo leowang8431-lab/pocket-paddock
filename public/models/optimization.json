@@ -1,0 +1,803 @@
+{
+  "description": "User-provided procedural models. Geometric car lettering replaced by runtime decals; palettes are retained, not independently verified official helmet replicas.",
+  "generator": "f1-chibi procedural",
+  "userProvided": true,
+  "optimizer": "meshoptimizer 0.22.0 (offline only, no runtime extension)",
+  "command": "node scripts/optimize-models.mjs <directory containing supplied GLBs and index CSVs>",
+  "input": [
+    {
+      "filename": "mclaren.glb",
+      "bytes": 1513976,
+      "sha256": "c02236992223484fa9a41b2ba6b0e6854101752c81d69d34261cf6dc1683c87c",
+      "triangles": 60888,
+      "metadata": {
+        "team": "McLaren",
+        "number": 4,
+        "driver": "Lando Norris"
+      }
+    },
+    {
+      "filename": "ferrari.glb",
+      "bytes": 1861912,
+      "sha256": "f74ef589e7492260f58e86611729d161bbd435335636ec76cfd640a1fc0b70c2",
+      "triangles": 74878,
+      "metadata": {
+        "team": "Ferrari",
+        "number": 16,
+        "driver": "Charles Leclerc"
+      }
+    },
+    {
+      "filename": "redbull.glb",
+      "bytes": 1537840,
+      "sha256": "d545e38c2ba75c75e8d9e6bbd1d6b931bbda39eafd1c62ff7c9b28c0a581ba40",
+      "triangles": 61864,
+      "metadata": {
+        "team": "Red Bull Ford",
+        "number": 1,
+        "driver": "Max Verstappen"
+      }
+    },
+    {
+      "filename": "mercedes.glb",
+      "bytes": 2114092,
+      "sha256": "d3c47a93c84375d3c4d6c48ea9bc4c616c49f3bdd3f09a03883abc816cfdcf35",
+      "triangles": 85032,
+      "metadata": {
+        "team": "Mercedes",
+        "number": 63,
+        "driver": "George Russell"
+      }
+    },
+    {
+      "filename": "aston.glb",
+      "bytes": 1549152,
+      "sha256": "f8842d0f94f79c14fa9addf9e56ab9cd1da02664cabc2ec01806cceab9c1f853",
+      "triangles": 62296,
+      "metadata": {
+        "team": "Aston Martin",
+        "number": 14,
+        "driver": "Fernando Alonso"
+      }
+    },
+    {
+      "filename": "alpine.glb",
+      "bytes": 1811216,
+      "sha256": "d11a17f69e80c3c3bf5f64bd7f8f0998588092abf3363db1074fece0e9dcf5c2",
+      "triangles": 72840,
+      "metadata": {
+        "team": "Alpine",
+        "number": 10,
+        "driver": "Pierre Gasly"
+      }
+    },
+    {
+      "filename": "williams.glb",
+      "bytes": 1936384,
+      "sha256": "7c39fc45266bb4ac25fce8fd5ba4174f5625d712f24b481cef1ce016f2154292",
+      "triangles": 77880,
+      "metadata": {
+        "team": "Williams",
+        "number": 23,
+        "driver": "Alex Albon"
+      }
+    },
+    {
+      "filename": "haas.glb",
+      "bytes": 1795044,
+      "sha256": "92cfbf80b5d036f849d1b773b756f7e76dae152f8fb97cc913d3cf523f1dfff5",
+      "triangles": 72184,
+      "metadata": {
+        "team": "Haas",
+        "number": 31,
+        "driver": "Esteban Ocon"
+      }
+    },
+    {
+      "filename": "racingbulls.glb",
+      "bytes": 2072336,
+      "sha256": "33aae0d0dc0372c325b933242401f2d16ca46c67222d881cbd9744ea8a0a5968",
+      "triangles": 83368,
+      "metadata": {
+        "team": "Racing Bulls",
+        "number": 30,
+        "driver": "Liam Lawson"
+      }
+    },
+    {
+      "filename": "audi.glb",
+      "bytes": 1715820,
+      "sha256": "bdf74d2eeadf0e07e81d7e5346c23aa68b7aa06ee31c9465a15a701dede4f375",
+      "triangles": 69048,
+      "metadata": {
+        "team": "Audi",
+        "number": 27,
+        "driver": "Nico Hulkenberg"
+      }
+    },
+    {
+      "filename": "cadillac.glb",
+      "bytes": 1554572,
+      "sha256": "5d16dc7022fc00d939e3b30810fb59f224867ab7b838ac07a6309f2bcce64edb",
+      "triangles": 62510,
+      "metadata": {
+        "team": "Cadillac",
+        "number": 11,
+        "driver": "Sergio Perez"
+      }
+    },
+    {
+      "filename": "lando_norris_04.glb",
+      "bytes": 115160,
+      "sha256": "142dc3077bc95407f9351335ef2ac2db62263b483f8022189b7b8a3e6e40ec84",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Lando Norris",
+        "number": 4,
+        "team": "McLaren"
+      }
+    },
+    {
+      "filename": "oscar_piastri_81.glb",
+      "bytes": 115164,
+      "sha256": "a65d51e80b6322991bfa234efe2c1b42b5a8963fed6ed0e60cef1b87145a053a",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Oscar Piastri",
+        "number": 81,
+        "team": "McLaren"
+      }
+    },
+    {
+      "filename": "charles_leclerc_16.glb",
+      "bytes": 115184,
+      "sha256": "2c6d3e6e62a47324cdb5fbee6ecfc3dec0ef33cab5debad4a6ca2f1551140883",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Charles Leclerc",
+        "number": 16,
+        "team": "Ferrari"
+      }
+    },
+    {
+      "filename": "lewis_hamilton_44.glb",
+      "bytes": 115228,
+      "sha256": "34b985c2e09223c95d3aa77f4f9fcf5677400dcb8b09474e4d02677ca714face",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Lewis Hamilton",
+        "number": 44,
+        "team": "Ferrari"
+      }
+    },
+    {
+      "filename": "max_verstappen_01.glb",
+      "bytes": 115172,
+      "sha256": "420d95da4b94c24be76a04e419222b9f4164fa8e3fc51c5f8696a7162a43ef7f",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Max Verstappen",
+        "number": 1,
+        "team": "Red Bull Ford"
+      }
+    },
+    {
+      "filename": "isack_hadjar_06.glb",
+      "bytes": 115192,
+      "sha256": "420127bdcf739a5e7041bf0cd753d3a7fafe3c51e5444c705f6218d175de8149",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Isack Hadjar",
+        "number": 6,
+        "team": "Red Bull Ford"
+      }
+    },
+    {
+      "filename": "george_russell_63.glb",
+      "bytes": 115176,
+      "sha256": "a6f7172f1bbdef065822fc1ce09c39b14350be285b9e78f8b082d269acaa1484",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "George Russell",
+        "number": 63,
+        "team": "Mercedes"
+      }
+    },
+    {
+      "filename": "kimi_antonelli_12.glb",
+      "bytes": 115184,
+      "sha256": "1ad1d6a043c9cc849f8519c1e2a7533ddbb52a6251f2e82683a88c93c3019bf1",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Kimi Antonelli",
+        "number": 12,
+        "team": "Mercedes"
+      }
+    },
+    {
+      "filename": "fernando_alonso_14.glb",
+      "bytes": 115168,
+      "sha256": "6ac951f6cf61414f20002fc91819d6ef16105f91cca859e0e4fd8318f4c29092",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Fernando Alonso",
+        "number": 14,
+        "team": "Aston Martin"
+      }
+    },
+    {
+      "filename": "lance_stroll_18.glb",
+      "bytes": 115176,
+      "sha256": "a4e1b25edb86fd5a86c9494bbce460f14f31596b141ae7e3afa1d9265cf6b098",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Lance Stroll",
+        "number": 18,
+        "team": "Aston Martin"
+      }
+    },
+    {
+      "filename": "pierre_gasly_10.glb",
+      "bytes": 115168,
+      "sha256": "16335dbd20925efb227567da9bf88a9a4c79ba9d691dfc740d1c46c88b031bef",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Pierre Gasly",
+        "number": 10,
+        "team": "Alpine"
+      }
+    },
+    {
+      "filename": "franco_colapinto_43.glb",
+      "bytes": 115188,
+      "sha256": "6f481bdde701cb9ba94c4846fde624dc152b609aae351e5358f9fb42e769ce4a",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Franco Colapinto",
+        "number": 43,
+        "team": "Alpine"
+      }
+    },
+    {
+      "filename": "alex_albon_23.glb",
+      "bytes": 115184,
+      "sha256": "7b6fa7c48a07d07662ba16d99f1b4daf8a08dda024b34045e7133fbc9f397162",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Alex Albon",
+        "number": 23,
+        "team": "Williams"
+      }
+    },
+    {
+      "filename": "carlos_sainz_55.glb",
+      "bytes": 115204,
+      "sha256": "a4d0c21bcb2cbf870a81d65b0fc2c19f57ce025b9378cd31dfdc7638c1746fae",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Carlos Sainz",
+        "number": 55,
+        "team": "Williams"
+      }
+    },
+    {
+      "filename": "esteban_ocon_31.glb",
+      "bytes": 115188,
+      "sha256": "1e263445f92928f4a49a9d599650327ba09a3622c54b21b53b1a087ebe3ad92b",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Esteban Ocon",
+        "number": 31,
+        "team": "Haas"
+      }
+    },
+    {
+      "filename": "oliver_bearman_87.glb",
+      "bytes": 115176,
+      "sha256": "3d7cc44b377debadff441c2d7f58c5e6b2425585695a5113a5083695ada33ea4",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Oliver Bearman",
+        "number": 87,
+        "team": "Haas"
+      }
+    },
+    {
+      "filename": "liam_lawson_30.glb",
+      "bytes": 115192,
+      "sha256": "5fcd5d5b12ba15ccc431db31124f4461135d9f035ba8ceee7965bc026cf07419",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Liam Lawson",
+        "number": 30,
+        "team": "Racing Bulls"
+      }
+    },
+    {
+      "filename": "arvid_lindblad_41.glb",
+      "bytes": 115164,
+      "sha256": "bc9023df025372c957f615773c095e9758797e79cf57dcce9ffc982238463ba5",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Arvid Lindblad",
+        "number": 41,
+        "team": "Racing Bulls"
+      }
+    },
+    {
+      "filename": "nico_hulkenberg_27.glb",
+      "bytes": 115200,
+      "sha256": "6bd0074af1b75c7c741aa11125462e2959ca7dd5f9b28e25adc23e2243fd44ec",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Nico Hulkenberg",
+        "number": 27,
+        "team": "Audi"
+      }
+    },
+    {
+      "filename": "gabriel_bortoleto_05.glb",
+      "bytes": 115172,
+      "sha256": "5491aaa1be23a534bb601d895bdea10978c435cacc0b9ce48192c8c0b4204693",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Gabriel Bortoleto",
+        "number": 5,
+        "team": "Audi"
+      }
+    },
+    {
+      "filename": "sergio_perez_11.glb",
+      "bytes": 115188,
+      "sha256": "6730d13ec052b08596f57be21976ae9228cc75007534c2b432d52fcef8b4d2b8",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Sergio Perez",
+        "number": 11,
+        "team": "Cadillac"
+      }
+    },
+    {
+      "filename": "valtteri_bottas_77.glb",
+      "bytes": 115200,
+      "sha256": "4e0c58ec75a2642ec475bcf9ccf7fbb21d2a6412ec462e9a0ec4c6bb97629f59",
+      "triangles": 4352,
+      "metadata": {
+        "driver": "Valtteri Bottas",
+        "number": 77,
+        "team": "Cadillac"
+      }
+    }
+  ],
+  "indexHashes": {
+    "teams_index.csv": "f91bf535abd788061331a7d90a9e1785e108dc63dc11e4fbf26c48f3a923d13c",
+    "helmets_index.csv": "9c2bf949ed0e0725029a463b01ba040d1fe14bb58afaeddd20e6ca87fa2acff6"
+  },
+  "sharedGeometry": {
+    "cars": 11,
+    "helmets": 22,
+    "comparisons": [
+      {
+        "material": "paint",
+        "commonTriangles": 6952,
+        "inputTriangles": {
+          "mclaren": 6952,
+          "ferrari": 6952,
+          "redbull": 6952,
+          "mercedes": 6952,
+          "aston": 6952,
+          "alpine": 6952,
+          "williams": 6952,
+          "haas": 6952,
+          "racingbulls": 6952,
+          "audi": 6952,
+          "cadillac": 6952
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      },
+      {
+        "material": "paint2",
+        "commonTriangles": 9780,
+        "inputTriangles": {
+          "mclaren": 9780,
+          "ferrari": 9786,
+          "redbull": 9780,
+          "mercedes": 9780,
+          "aston": 9780,
+          "alpine": 9780,
+          "williams": 9780,
+          "haas": 9780,
+          "racingbulls": 9780,
+          "audi": 9780,
+          "cadillac": 9786
+        },
+        "differences": "Ferrari/Cadillac have six tiny nose-emblem fill triangles; removed with geometric team emblem."
+      },
+      {
+        "material": "white",
+        "commonTriangles": 200,
+        "inputTriangles": {
+          "mclaren": 536,
+          "ferrari": 5240,
+          "redbull": 648,
+          "mercedes": 8488,
+          "aston": 984,
+          "alpine": 4568,
+          "williams": 6248,
+          "haas": 4344,
+          "racingbulls": 7816,
+          "audi": 2776,
+          "cadillac": 1096
+        },
+        "differences": "Removed only front-wing driver numbers; shared white stripes retained."
+      },
+      {
+        "material": "carbon",
+        "commonTriangles": 11408,
+        "inputTriangles": {
+          "mclaren": 11408,
+          "ferrari": 11408,
+          "redbull": 11408,
+          "mercedes": 11408,
+          "aston": 11408,
+          "alpine": 11408,
+          "williams": 11408,
+          "haas": 11408,
+          "racingbulls": 11408,
+          "audi": 11408,
+          "cadillac": 11408
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      },
+      {
+        "material": "tire",
+        "commonTriangles": 12064,
+        "inputTriangles": {
+          "mclaren": 12064,
+          "ferrari": 12064,
+          "redbull": 12064,
+          "mercedes": 12064,
+          "aston": 12064,
+          "alpine": 12064,
+          "williams": 12064,
+          "haas": 12064,
+          "racingbulls": 12064,
+          "audi": 12064,
+          "cadillac": 12064
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      },
+      {
+        "material": "rim",
+        "commonTriangles": 2912,
+        "inputTriangles": {
+          "mclaren": 2912,
+          "ferrari": 2912,
+          "redbull": 2912,
+          "mercedes": 2912,
+          "aston": 2912,
+          "alpine": 2912,
+          "williams": 2912,
+          "haas": 2912,
+          "racingbulls": 2912,
+          "audi": 2912,
+          "cadillac": 2912
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      },
+      {
+        "material": "chrome",
+        "commonTriangles": 4816,
+        "inputTriangles": {
+          "mclaren": 4816,
+          "ferrari": 4816,
+          "redbull": 4816,
+          "mercedes": 4816,
+          "aston": 4816,
+          "alpine": 4816,
+          "williams": 4816,
+          "haas": 4816,
+          "racingbulls": 4816,
+          "audi": 4816,
+          "cadillac": 4816
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      },
+      {
+        "material": "dark",
+        "commonTriangles": 6920,
+        "inputTriangles": {
+          "mclaren": 6920,
+          "ferrari": 6920,
+          "redbull": 6920,
+          "mercedes": 6920,
+          "aston": 6920,
+          "alpine": 6920,
+          "williams": 6920,
+          "haas": 6920,
+          "racingbulls": 6920,
+          "audi": 6920,
+          "cadillac": 6920
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      },
+      {
+        "material": "red",
+        "commonTriangles": 252,
+        "inputTriangles": {
+          "mclaren": 252,
+          "ferrari": 252,
+          "redbull": 252,
+          "mercedes": 252,
+          "aston": 252,
+          "alpine": 252,
+          "williams": 252,
+          "haas": 252,
+          "racingbulls": 252,
+          "audi": 252,
+          "cadillac": 252
+        },
+        "differences": "Shared geometry matches all eleven teams (positions and normals to 1e-6)."
+      }
+    ],
+    "removed": [
+      "Car embedded visor and helm_* geometry (replaced by selected driver helmet)",
+      "Car num and white front-wing driver-number geometry (runtime decals)",
+      "Car mark and six Ferrari/Cadillac nose-emblem fill triangles (runtime team wordmark)"
+    ],
+    "helmetAllInputsMatch": true
+  },
+  "before": {
+    "bytes": 21996372,
+    "triangles": 878532
+  },
+  "after": {
+    "modelBytes": 494260,
+    "paletteBytes": 20015,
+    "totalRuntimeBytes": 514275,
+    "carTriangles": 22668,
+    "helmetTriangles": 1770,
+    "carBatches": 23,
+    "helmetBatches": 4,
+    "files": [
+      "car.glb",
+      "helmet.glb",
+      "palettes.json"
+    ]
+  },
+  "simplification": {
+    "carMaxRelativeError": 0.003,
+    "helmetMaxRelativeError": 0.006,
+    "errorMetric": "Approximate MeshoptSimplifier appearance error, normalized per part. absoluteError = reported error * getScale(part); this is not an independently measured Hausdorff bound.",
+    "preserve": "Original authored normals and hard normal discontinuities; no textures or UVs existed in the supplied assets.",
+    "parts": [
+      {
+        "name": "body-materialpaint",
+        "originalTriangles": 6952,
+        "triangles": 2096,
+        "relativeError": 0.002996288239955902,
+        "absoluteError": 0.010120387323775404
+      },
+      {
+        "name": "wheel-front-right-paint2",
+        "originalTriangles": 1552,
+        "triangles": 1108,
+        "relativeError": 0.0029119052924215794,
+        "absoluteError": 0.0011187023979098154
+      },
+      {
+        "name": "wheel-front-left-paint2",
+        "originalTriangles": 1552,
+        "triangles": 1108,
+        "relativeError": 0.002909450326114893,
+        "absoluteError": 0.0011177592433706807
+      },
+      {
+        "name": "wheel-rear-right-paint2",
+        "originalTriangles": 1552,
+        "triangles": 1110,
+        "relativeError": 0.0029463907703757286,
+        "absoluteError": 0.001208509390858259
+      },
+      {
+        "name": "wheel-rear-left-paint2",
+        "originalTriangles": 1552,
+        "triangles": 1112,
+        "relativeError": 0.0029463907703757286,
+        "absoluteError": 0.001208509390858259
+      },
+      {
+        "name": "body-materialpaint2",
+        "originalTriangles": 3572,
+        "triangles": 856,
+        "relativeError": 0.0019220981048420072,
+        "absoluteError": 0.006019481452640085
+      },
+      {
+        "name": "body-materialwhite",
+        "originalTriangles": 200,
+        "triangles": 48,
+        "relativeError": 0.002159119350835681,
+        "absoluteError": 0.006609218485121193
+      },
+      {
+        "name": "body-materialcarbon",
+        "originalTriangles": 11408,
+        "triangles": 4190,
+        "relativeError": 0.0029980684630572796,
+        "absoluteError": 0.009954655716065908
+      },
+      {
+        "name": "wheel-front-right-tire",
+        "originalTriangles": 3016,
+        "triangles": 986,
+        "relativeError": 0.0029585082083940506,
+        "absoluteError": 0.0019820816952794695
+      },
+      {
+        "name": "wheel-front-left-tire",
+        "originalTriangles": 3016,
+        "triangles": 986,
+        "relativeError": 0.0028328620828688145,
+        "absoluteError": 0.0018979038367290813
+      },
+      {
+        "name": "wheel-rear-right-tire",
+        "originalTriangles": 3016,
+        "triangles": 1010,
+        "relativeError": 0.0028854100964963436,
+        "absoluteError": 0.0020773708357266774
+      },
+      {
+        "name": "wheel-rear-left-tire",
+        "originalTriangles": 3016,
+        "triangles": 996,
+        "relativeError": 0.0029521621763706207,
+        "absoluteError": 0.0021254294545425267
+      },
+      {
+        "name": "wheel-front-right-rim",
+        "originalTriangles": 728,
+        "triangles": 510,
+        "relativeError": 0.0029970009345561266,
+        "absoluteError": 0.0012225650330202759
+      },
+      {
+        "name": "wheel-front-left-rim",
+        "originalTriangles": 728,
+        "triangles": 514,
+        "relativeError": 0.002982478588819504,
+        "absoluteError": 0.0012166409400744538
+      },
+      {
+        "name": "wheel-rear-right-rim",
+        "originalTriangles": 728,
+        "triangles": 412,
+        "relativeError": 0.002829557517543435,
+        "absoluteError": 0.0012403988332206628
+      },
+      {
+        "name": "wheel-rear-left-rim",
+        "originalTriangles": 728,
+        "triangles": 410,
+        "relativeError": 0.002821597969159484,
+        "absoluteError": 0.0012369095899495142
+      },
+      {
+        "name": "wheel-front-right-chrome",
+        "originalTriangles": 484,
+        "triangles": 436,
+        "relativeError": 0.002722617005929351,
+        "absoluteError": 0.00022869980512965626
+      },
+      {
+        "name": "wheel-front-left-chrome",
+        "originalTriangles": 484,
+        "triangles": 436,
+        "relativeError": 0.0027014603838324547,
+        "absoluteError": 0.00022692264905510573
+      },
+      {
+        "name": "wheel-rear-right-chrome",
+        "originalTriangles": 772,
+        "triangles": 520,
+        "relativeError": 0.002967368345707655,
+        "absoluteError": 0.0009761352369637433
+      },
+      {
+        "name": "wheel-rear-left-chrome",
+        "originalTriangles": 772,
+        "triangles": 516,
+        "relativeError": 0.002966636558994651,
+        "absoluteError": 0.0009758945109353961
+      },
+      {
+        "name": "body-materialchrome",
+        "originalTriangles": 2304,
+        "triangles": 624,
+        "relativeError": 0.0029970905743539333,
+        "absoluteError": 0.005427267605207842
+      },
+      {
+        "name": "body-materialdark",
+        "originalTriangles": 6920,
+        "triangles": 2432,
+        "relativeError": 0.002993593458086252,
+        "absoluteError": 0.007164530278377157
+      },
+      {
+        "name": "body-materialred",
+        "originalTriangles": 252,
+        "triangles": 252,
+        "relativeError": 0,
+        "absoluteError": 0
+      },
+      {
+        "name": "helmet-materialvisor",
+        "originalTriangles": 1688,
+        "triangles": 506,
+        "relativeError": 0.005042398814111948,
+        "absoluteError": 0.001818358863405159
+      },
+      {
+        "name": "helmet-materialhelm_shell",
+        "originalTriangles": 1760,
+        "triangles": 718,
+        "relativeError": 0.005993892904371023,
+        "absoluteError": 0.0024415776422946345
+      },
+      {
+        "name": "helmet-materialhelm_ring",
+        "originalTriangles": 464,
+        "triangles": 310,
+        "relativeError": 0.005705493036657572,
+        "absoluteError": 0.002234838049234439
+      },
+      {
+        "name": "helmet-materialhelm_cap",
+        "originalTriangles": 440,
+        "triangles": 236,
+        "relativeError": 0.005886178929358721,
+        "absoluteError": 0.0013597832390990008
+      }
+    ]
+  },
+  "wheels": [
+    {
+      "name": "wheel-front-left",
+      "center": [
+        -0.59,
+        0.335,
+        0.868
+      ],
+      "radius": 0.335
+    },
+    {
+      "name": "wheel-front-right",
+      "center": [
+        0.59,
+        0.335,
+        0.868
+      ],
+      "radius": 0.335
+    },
+    {
+      "name": "wheel-rear-left",
+      "center": [
+        -0.6,
+        0.36,
+        -0.868
+      ],
+      "radius": 0.36
+    },
+    {
+      "name": "wheel-rear-right",
+      "center": [
+        0.6,
+        0.36,
+        -0.868
+      ],
+      "radius": 0.36
+    }
+  ]
+}

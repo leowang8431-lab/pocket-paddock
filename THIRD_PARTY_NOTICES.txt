@@ -22,3 +22,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
+
+
+ENGINE MECHANICAL CYCLE DATA (0.11)
+Source: "F1 Engine Ignition" by lmnmrn, Freesound #197219.
+https://freesound.org/people/lmnmrn/sounds/197219/
+License: CC0 1.0 Universal (public-domain dedication).
+https://creativecommons.org/publicdomain/zero/1.0/
+Source description says recorded with RODE NTG-2; exact vehicle, engine and
+model year are unverified and are not claimed by Pocket Paddock.
+Changes: decoded to mono PCM; phase-synchronous trimmed averaging of 42/103
+mechanical cycles at source segments 3.5-4.5 and 6.0-7.3 seconds; harmonic
+projection and fundamental phase alignment. Only derived coefficients are
+bundled in src/engine-cycles.ts. Runtime has no source-audio downloads.
+The official Formula 1 Norris/Monza video was used for reference analysis
+only. No samples from that official video are distributed with the game.

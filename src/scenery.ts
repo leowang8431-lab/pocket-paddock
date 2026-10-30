@@ -1,9 +1,17 @@
 import * as THREE from 'three';
 import { Track } from './track';
-import { createStandLayouts, createBrakingBoards, type StandLayout } from './stand-layout';
+import { createStandLayouts, createBrakingBoards, distanceToStand, standDimensions, type StandLayout } from './stand-layout';
 import { batchStaticScenery, coloredGeometry } from './render-batches';
+import {structuralRod} from './monza-details';
+import {addPitComplex,pitTreeExclusion} from './pit-complex';
+import {teams} from './team-catalog';
+import {addCircuitSurroundings} from './monza-surroundings';
+import {addMonzaLandmarks,landmarkTreeExclusion} from './monza-landmarks';
+import {addMonzaForest} from './monza-forest';
+import {addTracksideSafety,tracksideTreeExclusion} from './trackside-safety';
+import {ARCHITECTURE_HEIGHT_SCALE,scaleArchitectureHeight} from './architecture-scale';
 
-const palette={cream:0xf2eddc,teal:0x24564e,mint:0x86b7a0,coral:0xe87a61,navy:0x263c40,yellow:0xf2ca6d};
+const palette={cream:0xe5e2d8,teal:0x315a50,mint:0x86b7a0,coral:0xc53b34,navy:0x273338,yellow:0xe3bc42};
 const materials=new Map<number,THREE.MeshStandardMaterial>();
 function material(color:number){if(!materials.has(color))materials.set(color,new THREE.MeshStandardMaterial({color,roughness:.8}));return materials.get(color)!;}
 function box(parent:THREE.Object3D,x:number,y:number,z:number,w:number,h:number,d:number,color:number){
@@ -20,150 +28,133 @@ function sign(text:string,width:number,height:number,fg='#f5f0db',bg='#24564e'){
 const crowdClothesMaterial=new THREE.MeshLambertMaterial({color:0xffffff});
 const crowdPartsMaterial=new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true});
 let crowdShapes:{clothes:THREE.BufferGeometry;parts:THREE.BufferGeometry}[]|undefined;
-function addCrowd(parent:THREE.Group,width:number,rows:number){
+function addCrowd(parent:THREE.Group,width:number,rows:number,aisles=false){
   if(!crowdShapes){
     const clothes=coloredGeometry([
       {geometry:new THREE.BoxGeometry(.48,.65,.38),color:0xffffff},
       {geometry:new THREE.SphereGeometry(.235,6,3,0,Math.PI*2,0,Math.PI/2).translate(0,.51,0),color:0xffffff},
     ]);
     const parts=coloredGeometry([
-      {geometry:new THREE.IcosahedronGeometry(.21,0).translate(0,.51,0),color:0xf1d0ab},
+      {geometry:new THREE.SphereGeometry(.21,8,5).translate(0,.51,0),color:0xf1d0ab},
       {geometry:new THREE.BoxGeometry(.32,.045,.2).translate(0,.60,-.20),color:palette.navy},
       {geometry:new THREE.BoxGeometry(.16,.065,.065).translate(0,.52,-.205),color:palette.navy},
       {geometry:new THREE.BoxGeometry(.59,.48,.12).translate(0,-.03,.29),color:palette.teal},
       {geometry:new THREE.BoxGeometry(.59,.1,.58).translate(0,-.3,.03),color:palette.teal},
     ]);
-    // Beyond 85 units a person's face is subpixel; retain a coloured seated
-    // body and head rather than drawing all the cap, face and chair triangles.
+    // Keep two draws at either distance, even with twice as many people.
     crowdShapes=[{clothes,parts},{
       clothes:new THREE.BoxGeometry(.48,.65,.38),
       parts:coloredGeometry([{geometry:new THREE.OctahedronGeometry(.23,0).translate(0,.51,0),color:0xf1d0ab}]),
     }];
   }
-  const lod=new THREE.LOD(),centerZ=rows*1.75/2;lod.name='spectator-lod';lod.position.z=centerZ;
+  const lod=new THREE.LOD(),centerZ=(rows-1)*1.75/2;lod.name='spectator-lod';lod.position.z=centerZ;
   const capacity=Math.floor(width/1.5)*rows,o=new THREE.Object3D();
-  const colors=[palette.coral,palette.teal,palette.yellow,0xd8e4da,0x84a7bc,0xffffff];
+  const colors=[palette.coral,palette.teal,palette.yellow,0xd8e4da,0x84a7bc,0xffffff];let spectators=0;
   for(let level=0;level<crowdShapes.length;level++){
     const shape=crowdShapes[level],group=new THREE.Group();
     const clothes=new THREE.InstancedMesh(shape.clothes,crowdClothesMaterial,capacity);
     const parts=new THREE.InstancedMesh(shape.parts,crowdPartsMaterial,capacity);let index=0;
+    clothes.name='spectator-clothes';parts.name='spectator-faces-seats';
     for(let row=0;row<rows;row++)for(let col=0;col<Math.floor(width/1.5);col++){
       if((col+row*7)%11===0)continue;
+      if(aisles&&[-width*.32,0,width*.32].some(x=>Math.abs(-width/2+.8+col*1.5-x)<1.0))continue;
       o.position.set(-width/2+.8+col*1.5,2.06+row*.68,row*1.75+.2-centerZ);o.updateMatrix();
       clothes.setMatrixAt(index,o.matrix);clothes.setColorAt(index,new THREE.Color(colors[(col*3+row*7)%colors.length]));
       parts.setMatrixAt(index,o.matrix);index++;
     }
-    clothes.count=parts.count=index;clothes.computeBoundingSphere();parts.computeBoundingSphere();
+    spectators=index;clothes.count=parts.count=index;clothes.computeBoundingSphere();parts.computeBoundingSphere();
     group.add(clothes,parts);lod.addLevel(group,level===0?0:85,.12);
   }
-  lod.addLevel(new THREE.Group(),245,.1);parent.add(lod);
+  lod.addLevel(new THREE.Group(),245,.1);lod.userData={spectators,drawsPerLevel:2};parent.add(lod);return spectators;
 }
 
-function addForest(root:THREE.Group,locations:{x:number;z:number;s:number;color:THREE.Color}[]){
-  const shapes=[coloredGeometry([
-    {geometry:new THREE.CylinderGeometry(.35,.55,4.5,6).translate(0,2,0),color:0x997c59},
-    {geometry:new THREE.IcosahedronGeometry(3.3,0).scale(1,1.25,1).translate(0,6,0),color:0x6e9268},
-    {geometry:new THREE.IcosahedronGeometry(2.5,0).scale(.8,1,.8).translate(1.2,8.5,.5),color:0x8caa79},
-  ]),coloredGeometry([
-    {geometry:new THREE.CylinderGeometry(.36,.55,4.5,4).translate(0,2,0),color:0x997c59},
-    {geometry:new THREE.OctahedronGeometry(4,0).scale(1,1.2,1).translate(.3,6.7,0),color:0x7d9d70},
-  ])];
-  const treeMaterial=new THREE.MeshLambertMaterial({color:0xffffff,vertexColors:true});
-  const cells=new Map<string,typeof locations>();const size=92;
-  for(const p of locations){const key=`${Math.floor(p.x/size)},${Math.floor(p.z/size)}`;if(!cells.has(key))cells.set(key,[]);cells.get(key)!.push(p);}
-  const o=new THREE.Object3D();
-  for(const [key,trees] of cells){
-    const [cx,cz]=key.split(',').map(Number),x=(cx+.5)*size,z=(cz+.5)*size;
-    const lod=new THREE.LOD();lod.name=`forest-cell-${key}`;lod.position.set(x,0,z);
-    for(let level=0;level<shapes.length;level++){
-      const mesh=new THREE.InstancedMesh(shapes[level],treeMaterial,trees.length);
-      trees.forEach((p,i)=>{
-        o.position.set(p.x-x,0,p.z-z);o.scale.setScalar(p.s);o.rotation.set(0,(p.x*13.7+p.z*3.8)%(Math.PI*2),0);o.updateMatrix();mesh.setMatrixAt(i,o.matrix);
-        mesh.setColorAt(i,new THREE.Color().setScalar(.75+p.color.g*.5));
-      });
-      mesh.computeBoundingSphere();lod.addLevel(mesh,level===0?0:120,.12);
-    }
-    lod.addLevel(new THREE.Group(),340,.1);root.add(lod);
-  }
-  root.userData.treeCells=cells.size;root.userData.treeInstances=locations.length;
-}
-function grandstand(parent:THREE.Group,layout:StandLayout){
-  const {x,z,yaw,width,rows,covered}=layout;
-  const g=new THREE.Group();g.name=`grandstand-${layout.id}`;g.position.set(x,0,z);g.rotation.y=yaw;g.userData.layout=layout;parent.add(g);
-  box(g,0,.7,5,width+2,1.3,15,palette.cream);
+/** Exported for geometry audits; all occupied bounds use the same row profile. */
+export function grandstand(parent:THREE.Group,layout:StandLayout){
+  const {x,z,yaw,width,rows,covered}=layout,d=standDimensions(layout),backZ=11.7+d.depthExtension;
+  const g=new THREE.Group();g.name=`grandstand-${layout.id}`;g.position.set(x,0,z);g.rotation.y=yaw;g.userData.layout=layout;g.userData.dimensions=d;parent.add(g);
+  box(g,0,.7,d.baseCenterZ,width+2,1.3,d.baseDepth,palette.cream);
   for(let row=0;row<rows;row++){
     box(g,0,1.1+row*.68,row*1.75,width,.55,1.8,0xd6d9ca);
-    box(g,0,1.6+row*.68,row*1.75+.4,width,.2,.8,row%2?palette.coral:palette.teal);
+    const seatColor=layout.id==='centrale'?(row%2?0xd7dedb:0x638da7):(row%2?0xd7dedb:0x7e9caa);
+    if(layout.id==='centrale'){
+      const aisles=[-width*.32,0,width*.32],edges=[-width/2,...aisles,width/2];
+      for(let i=0;i<edges.length-1;i++){const left=edges[i]+(i?1.0:0),right=edges[i+1]-(i<edges.length-2?1.0:0);box(g,(left+right)/2,1.6+row*.68,row*1.75+.4,right-left,.2,.8,seatColor);}
+    }else box(g,0,1.6+row*.68,row*1.75+.4,width,.2,.8,seatColor);
   }
+  // Rear structure now reaches the last row; the extra tiers do not float
+  // beyond the old five-row slab. Railings sit behind the occupied seats.
+  const rearFloor=1.375+(rows-1)*.68,rearRailZ=d.lastRowZ+1.45;
+  for(let cx=-width/2+1;cx<=width/2-1;cx+=7.5){
+    box(g,cx,rearFloor/2,backZ,.18,rearFloor,.18,0x7f8d82);
+    box(g,cx,rearFloor+.55,rearRailZ,.055,1.1,.055,0x8c9b8e);
+  }
+  for(const y of [.25,1.05])box(g,0,rearFloor+y,rearRailZ,width,.055,.055,0x8c9b8e);
   if(covered){
-    for(const cx of [-width/2+2,width/2-2]){box(g,cx,5.6,9,.45,11,.45,palette.teal);box(g,cx,7.5,-1,.25,9,.25,palette.teal);}
-    const roof=box(g,0,10.6,5,width+5,.55,18,palette.cream);roof.rotation.x=-.06;
-    box(g,0,10.3,-4,width+5,.9,.3,palette.coral);
+    const frontY=d.roofY-Math.sin(.06)*d.roofDepth/2,backY=d.roofY+Math.sin(.06)*d.roofDepth/2;
+    for(const cx of [-width/2+2,width/2-2]){
+      box(g,cx,backY/2,backZ,.45,backY,.45,palette.teal);box(g,cx,frontY/2,-1,.25,frontY,.25,palette.teal);
+    }
+    const roof=box(g,0,d.roofY,d.roofCenterZ,width+5,.55,d.roofDepth,palette.cream);roof.name='grandstand-canopy';roof.rotation.x=-.06;
+    box(g,0,frontY+.2,-4,width+5,.9,.3,0x788780);
+    for(let cx=-width/2+3;cx<width/2;cx+=8){
+      structuralRod(g,new THREE.Vector3(cx,d.roofY-.35,-3.4),new THREE.Vector3(cx,d.roofY-.75,12.5+d.depthExtension),.055,material(0x7b8482));
+      structuralRod(g,new THREE.Vector3(cx,d.roofY-1.6,8.8+d.depthExtension),new THREE.Vector3(cx,d.roofY-.35,-3.4),.045,material(0x7b8482));
+    }
   }
-  // Two draws per stand instead of six; local -Z still faces the road, with
-  // forward cap brims/eyes and the seat back behind the spectator at +Z.
-  addCrowd(g,width,rows);
+  g.userData.spectators=addCrowd(g,width,rows,layout.id==='centrale');
+  if(layout.id==='centrale'){
+    for(const x of [-width*.32,0,width*.32]){
+      for(let step=0;step<rows*2;step++){
+        const z=-.58+step*.875,y=.9+step*.34;
+        box(g,x,y,z,1.7,.15,.88,0xbfc5b9);box(g,x,y+.083,z-.4,1.7,.026,.06,0xd7b858);
+      }
+      for(const dx of [-1,1]){
+        structuralRod(g,new THREE.Vector3(x+dx,1.9,-.6),new THREE.Vector3(x+dx,1.9+(rows-.5)*.68,d.lastRowZ+.25),.045,material(0x8c9b8e));
+        for(let j=0;j<rows;j++)box(g,x+dx,1.5+j*.68,-.3+j*1.75,.045,1.1,.045,0x8c9b8e);
+      }
+    }
+    const seats=new THREE.InstancedMesh(new THREE.BoxGeometry(.59,.58,.12),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.78}),Math.floor(width/1.5)*rows);
+    seats.name='centrale-individual-seat-backs';const transform=new THREE.Object3D();let count=0;
+    for(let row=0;row<rows;row++)for(let col=0;col<Math.floor(width/1.5);col++){
+      const x=-width/2+.8+col*1.5;if([-width*.32,0,width*.32].some(a=>Math.abs(x-a)<1))continue;
+      transform.position.set(x,1.95+row*.68,row*1.75+.82);transform.updateMatrix();seats.setMatrixAt(count,transform.matrix);seats.setColorAt(count++,new THREE.Color(row%2?0xe1e5dc:0x5c85a2));
+    }
+    seats.count=count;seats.computeBoundingSphere();g.add(seats);
+    for(let x=-width/2+3;x<width/2;x+=13.5){
+      box(g,x,(d.roofY-.2)/2,backZ,.25,d.roofY-.2,.25,0x7f8d82);
+      structuralRod(g,new THREE.Vector3(x,d.roofY-1.7,backZ),new THREE.Vector3(x,d.roofY-.35,-3.2),.085,material(0x8b998d));
+    }
+    for(let x=-width/2+2;x<width/2;x+=3.4)structuralRod(g,new THREE.Vector3(x,d.roofY-.49-Math.sin(.06)*d.depthExtension/2,-3.35),new THREE.Vector3(x,d.roofY+.48+Math.sin(.06)*d.depthExtension/2,12.4+d.depthExtension),.027,material(0xb1b9ae));
+    for(const side of [-1,1]){
+      const x=side*(width/2-1.8);box(g,x,d.roofY,-2.8,.07,5.0,.07,0x87998a);
+      for(let stripe=0;stripe<3;stripe++){
+        const flag=box(g,x-side*(.3+stripe*.5),d.roofY+1.4,-2.8,.5,1.1,.035,[0x188651,0xf0f0e4,0xc43c32][stripe]);flag.rotation.y=side*.13;
+      }
+    }
+    g.userData.detail={aisles:3,individualSeats:count,roofRibs:Math.ceil((width-4)/3.4),reference:'Monza official hospitality photographs and Centrale covered-grandstand map'};
+  }
   box(g,0,.8,-2.2,width+2,.28,.18,palette.teal);
-  const label=sign('AUTODROMO  •  MONZA',width*.7,1.3);label.position.set(0,2,-2.3);label.rotation.y=Math.PI;g.add(label);
+  for(let cx=-width/2+1;cx<=width/2-1;cx+=7.5)box(g,cx,1.9,-2.2,.07,2.2,.07,0x929c96);
+  for(const y of [1.0,1.7,2.5])box(g,0,y,-2.2,width-2,.07,.07,0x929c96);
+  const label=sign(layout.id==='centrale'?'TRIBUNA CENTRALE  •  MONZA':'AUTODROMO  •  MONZA',width*.7,layout.id==='centrale'?.8:1.3);label.position.set(0,layout.id==='centrale'?1.08:2,-2.3);label.rotation.y=Math.PI;g.add(label);
   return g;
 }
 
 export function createScenery(track:Track):THREE.Group {
   const root=new THREE.Group();root.name='Monza miniature paddock';
-  const base=box(root,65,-3.1,-64,810,5.9,850,0x57816c);
+  const base=box(root,65,-3.1,-64,810,5.9,850,0x405b3b);
   base.receiveShadow=true;
-  const grass=box(root,65,-.24,-64,804,.35,844,0xa9c793);grass.castShadow=false;
+  const grass=box(root,65,-.24,-64,804,.35,844,0x7e9a5c);grass.castShadow=false;
   // Subtle park lawn islands break up broad flat color without textures or downloads.
-  const lawnMaterial=material(0x9bbd86);
+  const lawnMaterial=material(0x738e53);
   for(const [x,z,w,d] of [[25,-60,65,135],[105,-180,40,65],[-175,-160,80,155],[190,80,110,125]]){
     const m=new THREE.Mesh(new THREE.CircleGeometry(1,40),lawnMaterial);m.rotation.x=-Math.PI/2;m.scale.set(w,d,1);m.position.set(x,-.052,z);m.receiveShadow=true;root.add(m);
   }
   // Pits are on the driver's right of the main straight; the stand faces them.
   const pit=new THREE.Group();pit.name='P房与围场';root.add(pit);
-  box(pit,-45,.035,34,26,.1,190,0xb4b8a7);
-  box(pit,-40,4.2,32,18,8.4,165,palette.cream);
-  box(pit,-40,9.1,32,20,.75,169,palette.teal);
-  box(pit,-40,11.5,32,18,4.1,165,palette.cream);
-  // Upper paddock club glazing, with readable mullions rather than a plain block.
-  box(pit,-49.12,11.7,32,.12,2.6,160,0x527e7a);
-  for(let j=0;j<24;j++)box(pit,-49.3,11.7,-47+j*6.9,.25,3,.22,palette.cream);
-  box(pit,-40,14,32,21,.7,170,palette.cream);
-  const teamColors=[palette.coral,palette.teal,palette.yellow,0x6296ac,0xa080b3,0xdb8e62];
-  for(let i=0;i<12;i++){
-    const z=-43+i*13.2,color=teamColors[Math.floor(i/2)];
-    box(pit,-49.25,3,z,.22,5.8,10.9,palette.navy);
-    box(pit,-49.45,5.95,z,.4,.65,11.5,color);
-    for(const pz of [z-5.7,z+5.7])box(pit,-49.6,3.1,pz,.55,6.2,.4,palette.cream);
-    // Recess floor, strip lighting and workshop shelf visible from the lane.
-    box(pit,-48.3,.15,z,3.3,.17,10.8,0x77817c);
-    box(pit,-49.6,5.6,z,.35,.16,9.8,palette.cream);
-    box(pit,-49.7,1.7,z+3.4,.6,1.5,2.1,0x6e8f87);
-    box(pit,-53,.12,z,4.5,.16,10.6,color);
-    for(const dz of [-5.3,5.3])box(pit,-55,.14,z+dz,7,.06,.14,palette.cream);
-    // Pit crew: repeated toy silhouettes, safely beyond the driveable lane.
-    for(let p=0;p<2;p++){
-      const crew=new THREE.Group();crew.position.set(-52.5,0,z+(p?3:-3));
-      box(crew,0,.95,0,.5,1.15,.4,color);
-      const head=new THREE.Mesh(new THREE.SphereGeometry(.33,8,6),material(palette.cream));head.position.y=1.8;crew.add(head);
-      for(const dx of [-.15,.15])box(crew,dx,.25,0,.19,.5,.28,palette.navy);
-      pit.add(crew);
-    }
-    const number=sign(String(i+1).padStart(2,'0'),1.6,1.1);number.position.set(-49.9,7.25,z);number.rotation.y=-Math.PI/2;pit.add(number);
-  }
-  // Pit wall leaves the fast lane, garages and both entry/exit joins clear.
-  box(pit,-73.8,.72,34,.7,1.45,218,palette.cream);
-  box(pit,-73.8,1.52,34,.9,.16,218,palette.teal);
-  for(let z=-64;z<132;z+=22){
-    box(pit,-72.4,2.4,z,1,1.4,5.3,palette.teal);
-    box(pit,-72.4,3.5,z,2.3,.3,6.1,palette.cream);
-  }
-  const pitTitle=sign('P O C K E T   P A D D O C K',90,3);pitTitle.rotation.y=-Math.PI/2;pitTitle.position.set(-49.55,12,32);pit.add(pitTitle);
-  // Paddock hospitality trailers and service facilities behind the P building.
-  for(let i=0;i<6;i++){
-    const x=-14+(i%2)*17,z=-35+Math.floor(i/2)*57;
-    box(pit,x,2.6,z,12,5.2,36,palette.cream);box(pit,x,5.5,z,13,.5,37,teamColors[i]);
-    box(pit,x-6.1,3,z,.1,1.4,28,0x527e7a);
-  }
+  box(pit,-45,.035,34,26,.1,190,0x989d97);
+  const pitComplex=addPitComplex(pit,track);
+  root.userData.pitComplex=pitComplex.layout;root.userData.pitClockController=pitComplex.clockController;root.userData.pitColliders=pitComplex.colliders;
   // Rendering, full-footprint safety checks and ground collision share one
   // authoring manifest. In particular the last stand is OUTSIDE Alboreto.
   const standLayouts=createStandLayouts(track);
@@ -185,8 +176,9 @@ export function createScenery(track:Track):THREE.Group {
   // Marshal posts, corner names and braking boards give useful driving references.
   for(let i=0;i<track.corners.length;i++){
     const c=track.corners[i],s=track.sampleAt(c.distance),o=s.point.clone().addScaledVector(s.right,29);
-    box(root,o.x,1.6,o.z,4.4,3.2,4.4,palette.cream);box(root,o.x,3.4,o.z,5.5,.45,5.5,palette.coral);
-    const label=sign(c.name.split(' · ')[0].toUpperCase(),12,2.4);label.position.copy(o).add(new THREE.Vector3(0,6,0));label.rotation.y=Math.atan2(-s.right.x,-s.right.z);root.add(label);
+    const hut=new THREE.Group();hut.name=`marshal-post-${i}`;root.add(hut);
+    box(hut,o.x,1.6,o.z,4.4,3.2,4.4,palette.cream);box(hut,o.x,3.4,o.z,5.5,.45,5.5,palette.coral);
+    const label=sign(c.name.split(' · ')[0].toUpperCase(),12,2.4);label.position.copy(o).add(new THREE.Vector3(0,6,0));label.rotation.y=Math.atan2(-s.right.x,-s.right.z);hut.add(label);scaleArchitectureHeight(hut);
   }
   const brakingBoards=createBrakingBoards(track);root.userData.brakingBoards=brakingBoards;
   for(const layout of brakingBoards){
@@ -196,8 +188,31 @@ export function createScenery(track:Track):THREE.Group {
   }
   // The historic high-speed banking passes over Serraglio, as on the venue map.
   const bridge=track.sampleAt(track.corners[5].distance-8);const bg=new THREE.Group();bg.position.copy(bridge.point);bg.rotation.y=Math.atan2(bridge.tangent.x,bridge.tangent.z);root.add(bg);
-  box(bg,0,9.8,0,78,1.1,11,0xc6c8b4);box(bg,0,10.6,-5.3,78,1.5,.4,0xb7bfae);box(bg,0,10.6,5.3,78,1.5,.4,0xb7bfae);
-  for(const x of [-26,26]){box(bg,x,4.9,0,2,9.8,10,0xb3b7a5);box(bg,x,7.8,0,6,1.2,11,0xc6c8b4);}
+  const historicDeck=box(bg,0,9.8,0,78,1.1,11,0xbfc2b7);historicDeck.rotation.x=.10;
+  box(bg,0,11.15,-5.3,78,1.5,.4,0xa7b1a5);box(bg,0,10.1,5.3,78,1.5,.4,0xa7b1a5);
+  for(let x=-36;x<38;x+=6.5){box(bg,x,9.1,0,.30,.8,10.4,0x9da79d);box(bg,x,10.6,-5.5,.14,2.4,.14,0x7a8b7d);}
+  for(const x of [-26,26]){box(bg,x,4.9,0,2,9.8,10,0xa6afa3);box(bg,x,7.8,0,6,1.2,11,0xbfc2b7);}
+  root.userData.landmarks=[
+    {id:'pit-building',name:'Palazzina Box / Race Club',x:-40,z:32,width:18,length:165,height:16.1,reference:pitComplex.layout.reference,artistic:'Twelve shortened garage bays with upper Race Club glazing, segmented roof, apron workstations and service circulation; brochure pp.5–9/16 and user pitlane photographs.'},
+    {id:'hospitality-tower',name:'Tower Hospitality',x:pitComplex.layout.towers[1].x,z:pitComplex.layout.towers[1].z,height:20.8,reference:pitComplex.layout.reference,artistic:'Two independent straight-end towers with glazed viewing floors and pilotis; placement compressed from the official hospitality diagram.'},
+    {id:'fans-club',name:'Fans Club',x:-40,z:105,height:16.3,reference:pitComplex.layout.reference,artistic:'Curved glazed corner of the pit building, distinct from the freestanding towers.'},
+    {id:'pit-lane',name:'Pit lane',x:-63,z:34,width:12,length:260},
+    {id:'centrale',name:'Tribuna Centrale',x:standLayouts[0].x,z:standLayouts[0].z,reference:'Monza official grandstand map, opposite the pit building'},
+    {id:'podium',name:'Podio',x:-53,z:60,width:6,length:15.3,height:7.6,artistic:'Compressed cantilevered podium with Italian tricolour accents.'},
+    {id:'race-control',name:'Direzione Gara',x:-50.8,z:84,width:5.9,length:12.4,height:9.6,artistic:'Interpretive miniature glazed control balcony above the garage apron; not a claim of a planned new control building being complete.'},
+    {id:'pit-clock',name:'RIOLEX pit entry clock',x:-63,z:124,width:24,length:.85,height:10.3,reference:pitComplex.layout.reference,artistic:'User-reference green clock bridge, with a fictional RIOLEX wordmark, live analog hands; vertical scaling keeps the doorways and under-beam clearance consistent.'},
+    {id:'historic-banking',name:'Sopraelevata / Serraglio',x:bridge.point.x,z:bridge.point.z,artistic:'Shortened concrete banking crossover with repeated ribs.'},
+  ];
+  for(const landmark of root.userData.landmarks)if(typeof landmark.height==='number')landmark.height*=ARCHITECTURE_HEIGHT_SCALE;
+  root.userData.architecture={heightScale:ARCHITECTURE_HEIGHT_SCALE,footprintsPreserved:true};
+  const circuitProps=addCircuitSurroundings(root,track);
+  const backgroundLandmarks=addMonzaLandmarks(root,track);
+  const tracksideSafety=addTracksideSafety(root,track);
+  root.userData.landmarks.push(
+    {id:'paddock-service-row',name:'Paddock transporters and service access',x:-9,z:-8,artistic:'Four parked transporters and awnings replace generic blocks; access sequence follows FIA pit/service relationships, not the 2025 garage order.'},
+    {id:'fan-courtyard',name:'Circuit shop / cafe / park access',x:-147,z:117,reference:'Official hospitality brochure: shops and food trucks outside the paddocks',artistic:'Miniature visitor courtyard in the gap behind the start-straight stands; not a surveyed Fangio-statue or Roccolo location.'},
+    {id:'broadcast-screen',name:'Centrale video screen',x:-43,z:-68,artistic:'Compressed venue screen facing the main grandstand, outside the pit exit.'},
+  );
   // Deterministic planted park. Instancing keeps the full miniature inexpensive.
   let seed=51234;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
   const locations:{x:number;z:number;s:number;color:THREE.Color}[]=[];
@@ -206,9 +221,34 @@ export function createScenery(track:Track):THREE.Group {
     if(x>-154&&x<20&&z>-120&&z<215)continue;
     const s=track.nearest(x,z);if(Math.hypot(x-s.point.x,z-s.point.z)<34)continue;
     if(x>40&&x<120&&z>-35&&z<70)continue;
+    if(circuitProps.some(prop=>Math.hypot(x-prop.x,z-prop.z)<Math.hypot(prop.width,prop.depth)/2+3.8))continue;
+    if(backgroundLandmarks.some(layout=>landmarkTreeExclusion(x,z,layout,track)))continue;
+    if(pitTreeExclusion(x,z,pitComplex.layout))continue;
     locations.push({x,z,s:.7+random()*.7,color:new THREE.Color().setHSL(.29+random()*.07,.23+random()*.12,.35+random()*.15)});
   }
-  addForest(root,locations);
+  // Keep the established deterministic park. Only trees whose crowns would
+  // enter a service bay or the enlarged grandstands move to a nearby clear spot.
+  let relocated=0,relocatedForStands=0,relocatedForServices=0;
+  const standTreeExclusion=(x:number,z:number)=>standLayouts.some(stand=>distanceToStand(x,z,stand)<7);
+  const treeClear=(x:number,z:number)=>{
+    const near=track.nearest(x,z);
+    return !(x>-154&&x<20&&z>-120&&z<215)&&!(x>40&&x<120&&z>-35&&z<70)
+      &&Math.hypot(x-near.point.x,z-near.point.z)>=34
+      &&!circuitProps.some(prop=>Math.hypot(x-prop.x,z-prop.z)<Math.hypot(prop.width,prop.depth)/2+3.8)
+      &&!backgroundLandmarks.some(layout=>landmarkTreeExclusion(x,z,layout,track))
+      &&!pitTreeExclusion(x,z,pitComplex.layout)&&!tracksideTreeExclusion(x,z,tracksideSafety)&&!standTreeExclusion(x,z);
+  };
+  for(const location of locations){
+    const standConflict=standTreeExclusion(location.x,location.z),serviceConflict=tracksideTreeExclusion(location.x,location.z,tracksideSafety);
+    if(!standConflict&&!serviceConflict)continue;
+    let moved=false;
+    for(const radius of [10,16,24,32,45])for(let i=0;i<16;i++){
+      if(moved)continue;const angle=i*Math.PI/8,x=location.x+Math.cos(angle)*radius,z=location.z+Math.sin(angle)*radius;
+      if(x>=-213&&x<=337&&z>=-410&&z<=325&&treeClear(x,z)){location.x=x;location.z=z;moved=true;relocated++;if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;}
+    }
+    if(!moved)throw new Error('Cannot safely relocate a facility tree');
+  }
+  addMonzaForest(root,locations);Object.assign(root.userData.forest,{relocatedForFacilities:relocated,relocatedForStands,relocatedForServices});
   batchStaticScenery(root);
   // These objects never move. Crowd/tree LOD still changes visibility, while
   // static world matrices and scenery shadow draws need no per-frame updates.

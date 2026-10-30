@@ -1,0 +1,49 @@
+/* Garage showroom: a clear three-quarter model view, with controls beside it. */
+body[data-state=menu]{--menu-ink:#173e37;--menu-accent:var(--selected-team,#e97551)}
+body[data-state=menu] #app{--menu-accent:var(--selected-team,#e97551)}
+body[data-state=menu] #viewport::after{background:linear-gradient(90deg,#f5f4e8a6 0,#f5f4e82b 28%,transparent 60%,#163e2b12)}
+body[data-state=menu] .menu-copy{top:19%;left:5.5%;max-width:32%;z-index:1}
+body[data-state=menu] .menu-copy .eyebrow{font-size:9px;letter-spacing:2.2px}
+body[data-state=menu] .menu-copy .eyebrow>span{background:var(--menu-accent);border:0;color:white;padding:6px 8px;border-radius:4px}
+body[data-state=menu] .menu-copy h1{font-size:clamp(37px,4.3vw,66px);line-height:1.06;letter-spacing:-2.8px;margin:23px 0 17px}
+body[data-state=menu] .menu-copy h1 em{color:var(--menu-accent);font-style:normal}
+body[data-state=menu] .menu-copy p{font-size:11px;line-height:1.9;color:#42695c}
+.hero-features{display:flex;flex-wrap:wrap;gap:6px;margin:21px 0 17px}
+.hero-features>span{font-size:8px;font-weight:600;letter-spacing:.3px;padding:6px 9px;border:1px solid #345b4833;border-radius:20px;background:#faf9ecb3;color:#476b57}
+body[data-state=menu] .track-pill{margin-top:15px;width:275px;max-width:100%;padding:11px 13px;border-left:3px solid var(--menu-accent);border-radius:3px 10px 10px 3px;background:#faf9ebd9}
+.car-showcase{position:fixed;left:35%;bottom:112px;transform:translateX(-50%);width:41%;max-width:550px;z-index:2;text-align:center;pointer-events:none}
+.showcase-title{display:flex;justify-content:center;align-items:center;gap:13px;color:#173e37;text-shadow:0 1px 12px #fff9}
+.showcase-number{font:800 43px/1 Consolas,monospace;letter-spacing:-4px;color:var(--selected-team,#e97551);border-right:1px solid #315d3e40;padding-right:16px;min-width:70px}
+.showcase-title>div{display:flex;flex-direction:column;gap:4px;text-align:left}
+.showcase-title .eyebrow{font-size:7px;letter-spacing:2px;color:#5b7c65}
+.showcase-title strong{font-size:20px;line-height:1.1;letter-spacing:-.5px}
+.showcase-title small{font-size:10px;color:#476c58}
+.showcase-views{display:inline-flex;gap:4px;padding:4px;margin-top:12px;border-radius:24px;background:#fbf9ece6;border:1px solid #fff9;box-shadow:0 4px 15px #1d4d3720;pointer-events:auto}
+.showcase-views button{font:inherit;font-size:9px;font-weight:600;border:0;padding:7px 15px;border-radius:20px;color:#6d8169;background:transparent;min-width:58px}
+.showcase-views button[aria-pressed=true]{color:#fff9e9;background:#204f3c;box-shadow:0 2px 6px #173b3520}
+.showcase-note{font-size:8px;color:#5c7a65;margin:8px 0 0;text-shadow:0 1px 8px #fff}
+body[data-state=menu] .world-caption{display:none}
+body[data-state=menu] .garage.team-garage{top:115px;right:4%;bottom:94px;width:404px;max-height:none;padding:24px 23px 15px;border-radius:19px;border:1px solid #fff;background:#fcfaf0f2;box-shadow:0 18px 55px #183c3525}
+body[data-state=menu] .garage-header{border-bottom:1px solid #294d3c18;padding-bottom:13px}
+body[data-state=menu] .garage h2{font-size:25px;margin:13px 0 6px;letter-spacing:-1px}
+body[data-state=menu] .garage .muted{font-size:9px;margin-bottom:12px}
+body[data-state=menu] .garage-scroll{padding-top:1px}
+body[data-state=menu] .team-card{min-height:43px;background:#fffdf5d9;border-color:#dce3d4}
+body[data-state=menu] .team-card[aria-pressed=true]{background:color-mix(in srgb,var(--team-color) 8%,#fffdf3);box-shadow:0 0 0 1px var(--team-color) inset}
+body[data-state=menu] .garage-launch{background:linear-gradient(0deg,#fcfaf0 88%,#fcfaf000);padding-top:9px}
+body[data-state=menu] .garage-launch .primary-button{background:#204f3c;border-bottom:3px solid #123f2c;box-shadow:0 5px 14px #173e3424}
+.camera-setting{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:9px;color:#65806a}
+.camera-setting label{font-weight:650;color:#335a47;flex:1}
+.camera-setting select{font:inherit;font-size:9px;font-weight:600;border:1px solid #cfdac7;border-radius:7px;background:#fffdf2;color:#305843;padding:5px 23px 5px 9px}
+.camera-setting>span{font:8px Consolas,monospace;letter-spacing:.7px;color:#8c9c80}
+.engine-readout{display:flex;align-items:center;justify-content:space-between;gap:8px;font:8px Consolas,monospace;margin-top:4px;color:#5a7b5c}
+.engine-readout small{font:7px Consolas,'Microsoft YaHei',sans-serif;color:#da7146;min-height:10px}
+#gear[data-shift=up]{background:#d8eac6;color:#34672f}#gear[data-shift=down]{background:#f5e9c4;color:#a47137}
+@media(min-width:1600px){body[data-state=menu] .garage.team-garage{width:430px;right:5%;top:16%;bottom:105px;padding:29px 26px 18px}}
+@media(max-width:1100px) and (min-width:801px){body[data-state=menu] .garage.team-garage{right:3%;width:350px;padding:20px 18px 13px}body[data-state=menu] .menu-copy{max-width:30%;left:4%}body[data-state=menu] .menu-copy h1{font-size:43px}.hero-features{max-width:210px}.car-showcase{left:33%;width:40%}}
+@media(min-width:801px) and (max-height:760px){body[data-state=menu] .garage.team-garage{top:91px;bottom:84px;padding:17px 19px 10px}.garage-header h2{font-size:21px!important;margin:9px 0 5px!important}.garage-header{padding-bottom:9px!important}.camera-setting{margin-top:5px}.car-showcase{bottom:92px}.showcase-title strong{font-size:16px}.showcase-number{font-size:32px}.showcase-views{margin-top:8px}.showcase-note{display:none}body[data-state=menu] .menu-copy{top:20%}body[data-state=menu] .menu-copy h1{font-size:46px}}
+@media(max-width:800px) and (orientation:portrait){body[data-state=menu] .menu-copy{top:110px;left:21px;max-width:80%;pointer-events:none}body[data-state=menu] .menu-copy .eyebrow{font-size:7px}body[data-state=menu] .menu-copy h1,body[data-state=menu] .menu-copy p,.hero-features,body[data-state=menu] .track-pill{display:none}body[data-state=menu] .garage.team-garage{left:16px;right:16px;top:389px;bottom:78px;width:auto;border-radius:15px;padding:15px 17px 10px}.garage-header{padding-bottom:8px!important}body[data-state=menu] .garage h2{font-size:20px;margin:7px 0 4px}body[data-state=menu] .garage .muted{display:none}.car-showcase{left:50%;top:306px;bottom:auto;width:calc(100% - 40px);transform:translateX(-50%);max-width:440px;display:flex;align-items:center;justify-content:space-between;text-align:left;padding:8px 10px;border:1px solid #fff8;background:#fbf9e5c9;border-radius:12px}.showcase-title{gap:8px}.showcase-title .eyebrow{font-size:6px}.showcase-title strong{font-size:13px}.showcase-title small{font-size:8px}.showcase-number{font-size:26px;min-width:42px;padding-right:9px;letter-spacing:-2px}.showcase-views{margin:0;padding:3px;gap:2px;border:0;box-shadow:none}.showcase-views button{padding:7px 8px;font-size:8px;min-width:36px}.showcase-note{display:none}.camera-setting{margin-top:5px}.camera-setting select{padding:4px 20px 4px 7px}.race-mode-setting{margin-top:7px!important}.garage-launch{padding-top:5px!important}body[data-state=menu] .team-card{min-height:37px}.engine-readout{font-size:7px}}
+@media(max-width:800px) and (orientation:portrait) and (max-height:760px){body[data-state=menu] .garage.team-garage{top:333px;bottom:68px}.car-showcase{top:264px}body[data-state=menu] .menu-copy{top:95px}}
+@media(max-width:800px) and (orientation:landscape){body[data-state=menu] .menu-copy{top:89px;left:20px;max-width:36%}body[data-state=menu] .menu-copy h1{font-size:28px;margin:13px 0 9px}body[data-state=menu] .menu-copy p,.hero-features,body[data-state=menu] .track-pill{display:none}body[data-state=menu] .garage.team-garage{left:auto;right:12px;top:73px;bottom:55px;width:296px;padding:11px 13px 7px;border-radius:12px}body[data-state=menu] .garage h2{font-size:18px;margin:7px 0 4px}body[data-state=menu] .garage .muted{display:none}.garage-header{padding-bottom:5px!important}.camera-setting{margin-top:4px}.camera-setting select{padding:3px 18px 3px 6px}.car-showcase{left:28%;bottom:59px;width:48%}.showcase-title strong{font-size:13px}.showcase-title small{font-size:7px}.showcase-title .eyebrow{display:none}.showcase-number{font-size:25px;min-width:43px;padding-right:8px;letter-spacing:-2px}.showcase-title{gap:8px}.showcase-views{margin-top:7px}.showcase-views button{font-size:7px;padding:5px 10px;min-width:40px}.showcase-note{display:none}.engine-readout{font-size:6px}.engine-readout small{font-size:6px}}
+
+@media(min-width:801px){.showcase-title{display:inline-flex;padding:10px 17px;border:1px solid #fff9;border-radius:12px;background:#fbf9ece6;box-shadow:0 5px 20px #173e3412;text-shadow:none}}

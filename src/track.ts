@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createStandLayouts, standCollider } from './stand-layout';
+import {asphaltTexture,catchFenceMaterial} from './monza-details';
+import {createWidthZones,roadWidthAt,type WidthZone} from './track-width';
 
 /** Scaled, widened Monza GP layout. Metres here are game units, not survey data. */
 export interface TrackSample {
@@ -43,6 +45,7 @@ function squaredBoxDistance(x:number,z:number,node:SampleNode):number {
 export class Track {
   readonly group = new THREE.Group();
   readonly width = 16;
+  readonly widthZones:readonly WidthZone[];
   readonly samples: TrackSample[] = [];
   readonly length: number;
   readonly checkpoints: number[];
@@ -100,6 +103,8 @@ export class Track {
       {name:'Ascari · 阿斯卡里',x:81,z:0},
       {name:'Alboreto · 抛物线弯',x:-59,z:221},
     ].map(c=>({name:c.name,distance:this.nearest(c.x,c.z).distance}));
+    this.widthZones=createWidthZones(this.corners);
+    this.group.userData.widthZones=this.widthZones;
     this.colliders.push(...createStandLayouts(this).map(standCollider));
     this.build();
     this.batchStaticGeometry();
@@ -171,10 +176,17 @@ export class Track {
     if(this.isPitLane(x,z))return 'asphalt';
     const s=this.nearest(x,z);
     const d=Math.hypot(s.point.x-x,s.point.z-z);
-    if(d<=this.width/2+0.8)return 'asphalt';
+    if(d<=this.widthAt(s.distance)/2+0.8)return 'asphalt';
     // Legible tan runoffs at the principal braking and high speed zones.
     if(d>11 && d<23 && this.isGravelSection(s.distance))return 'gravel';
     return 'grass';
+  }
+
+  widthAt(distance:number):number {return roadWidthAt(distance,this.length,this.width,this.widthZones);}
+
+  /** Scale the asphalt, edge paint and kerbs on the local normal about the centreline. */
+  roadOffsetAt(distance:number,offset:number):number {
+    return offset*this.widthAt(distance)/this.width;
   }
 
   private isGravelSection(distance:number):boolean {
@@ -182,17 +194,19 @@ export class Track {
     return (t>.14&&t<.22)||(t>.35&&t<.53)||(t>.64&&t<.71)||(t>.85&&t<.94);
   }
 
-  private ribbon(inner:number,outer:number,y:number,mat:THREE.Material,filter?:(s:TrackSample)=>boolean) {
-    const positions:number[]=[]; const indices:number[]=[];
+  private ribbon(inner:number,outer:number,y:number,mat:THREE.Material,filter?:(s:TrackSample)=>boolean,followWidth=false) {
+    const positions:number[]=[]; const indices:number[]=[];const uvs:number[]=[];
     for(let i=0;i<=this.samples.length;i++){
       const s=this.samples[i%this.samples.length];
-      positions.push(s.point.x+s.right.x*inner,y,s.point.z+s.right.z*inner,
-        s.point.x+s.right.x*outer,y,s.point.z+s.right.z*outer);
+      const a=followWidth?this.roadOffsetAt(s.distance,inner):inner,b=followWidth?this.roadOffsetAt(s.distance,outer):outer;
+      positions.push(s.point.x+s.right.x*a,y,s.point.z+s.right.z*a,
+        s.point.x+s.right.x*b,y,s.point.z+s.right.z*b);
+      uvs.push((s.point.x+s.right.x*a)/5,(s.point.z+s.right.z*a)/5,(s.point.x+s.right.x*b)/5,(s.point.z+s.right.z*b)/5);
       if(i<this.samples.length && (!filter||filter(s))) {
         const k=i*2;indices.push(k,k+1,k+2,k+1,k+3,k+2);
       }
     }
-    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setIndex(indices);geo.computeVertexNormals();
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geo.setIndex(indices);geo.computeVertexNormals();
     const mesh=new THREE.Mesh(geo,mat);mesh.receiveShadow=true;this.group.add(mesh);return mesh;
   }
 
@@ -203,40 +217,66 @@ export class Track {
       if(!material){material=new THREE.MeshStandardMaterial({color,roughness,side:THREE.DoubleSide});sharedMaterials.set(key,material);}
       return material;
     };
-    const road=mat(0x404c50); const edge=mat(0xf6f0d8); const gravel=mat(0xd7c5a2); const runoff=mat(0x70a58c);
+    const road=mat(0x56595b); const edge=mat(0xf3f1e9); const gravel=mat(0xc4b797); const runoff=mat(0x60885f);
+    const asphalt=asphaltTexture();if(asphalt)road.map=asphalt;
+    road.name='monza-asphalt';road.userData.weatherSurface='road';
     this.ribbon(-24,24,0.014,runoff);
     this.ribbon(-23,-11,0.023,gravel,s=>this.isGravelSection(s.distance));
     this.ribbon(11,23,0.023,gravel,s=>this.isGravelSection(s.distance));
-    this.ribbon(-8.15,8.15,0.045,road);
-    this.ribbon(-8,-7.82,0.057,edge);this.ribbon(7.82,8,0.057,edge);
-    const curbMats=[mat(0xf5f1dc),mat(0xe96855)];
+    this.ribbon(-8.15,8.15,0.045,road,undefined,true);
+    this.ribbon(-8,-7.82,0.057,edge,undefined,true);this.ribbon(7.82,8,0.057,edge,undefined,true);
+    const curbMats=[mat(0xf3f1e9),mat(0xc92f31)];
     for(let side=-1;side<=1;side+=2){
       for(let color=0;color<2;color++){
-        this.ribbon(side*8.25,side*9.65,0.082,curbMats[color],s=>Math.floor(s.distance/3.2)%2===color);
+        this.ribbon(side*8.25,side*9.65,0.082,curbMats[color],s=>Math.floor(s.distance/3.2)%2===color,true);
       }
-      this.ribbon(side*9.65,side*10.8,0.035,mat(0x3b9475));
+      this.ribbon(side*9.65,side*10.8,0.035,mat(0x32845e),undefined,true);
     }
     // Game's perimeter wall agrees with the collision distance used by physics.
-    const railGeo=new THREE.BoxGeometry(3.8,0.28,0.22);
-    const railMat=mat(0xc7d7cf,0.65);
+    // Corrugated Armco profile; three runs and a canted catch fence are more
+    // recognisable than two flat painted strips. Geometry remains instanced.
+    const railVertices:number[]=[],railIndices:number[]=[];
+    const profile=[[-.17,.02],[-.11,.10],[0,-.02],[.11,.10],[.17,.02]];
+    for(const [y,z]of profile)railVertices.push(-2.12,y,z,2.12,y,z);
+    for(let i=0;i<profile.length-1;i++){const a=i*2;railIndices.push(a,a+2,a+1,a+1,a+2,a+3);}
+    const railGeo=new THREE.BufferGeometry();railGeo.setAttribute('position',new THREE.Float32BufferAttribute(railVertices,3));railGeo.setIndex(railIndices);railGeo.computeVertexNormals();
+    const railMat=mat(0x9ea7aa,0.48);railMat.metalness=.45;railMat.name='galvanised-armco';
     const railCount=Math.ceil(this.length/4.1)*2;
-    const rails=new THREE.InstancedMesh(railGeo,railMat,railCount*2);
-    const posts=new THREE.InstancedMesh(new THREE.BoxGeometry(.22,1.45,.22),mat(0x768f84),railCount);
-    const o=new THREE.Object3D();let ri=0,pi=0;
+    const rails=new THREE.InstancedMesh(railGeo,railMat,railCount*3);
+    const posts=new THREE.InstancedMesh(new THREE.BoxGeometry(.14,4.9,.14),mat(0x7d8789,.48),railCount);
+    const fenceMaterial=catchFenceMaterial();
+    const fence=new THREE.InstancedMesh(new THREE.PlaneGeometry(4.22,3.3),fenceMaterial,railCount);
+    const fenceTop=new THREE.InstancedMesh(new THREE.PlaneGeometry(4.22,.88),fenceMaterial,railCount);
+    const braces=new THREE.InstancedMesh(new THREE.BoxGeometry(.1,.92,.1),mat(0x7d8789,.48),railCount);
+    const o=new THREE.Object3D();let ri=0,pi=0,fi=0;
     for(let d=0;d<this.length;d+=4.1){
       const s=this.sampleAt(d);
       for(const sign of [-1,1]){
-        const x=s.point.x+s.right.x*24*sign,z=s.point.z+s.right.z*24*sign;
+        const before=this.sampleAt(d-2.05),after=this.sampleAt(d+2.05);
+        const ax=before.point.x+before.right.x*24*sign,az=before.point.z+before.right.z*24*sign;
+        const bx=after.point.x+after.right.x*24*sign,bz=after.point.z+after.right.z*24*sign;
+        const x=(ax+bx)/2,z=(az+bz)/2;
         const closest=this.nearest(x,z);
         if(Math.hypot(x-closest.point.x,z-closest.point.z)<21)continue;
         // The main straight's inner rail is replaced by a properly located pit wall.
         if(z> -108 && z<181 && x> -75&&x< -50)continue;
-        const yaw=Math.atan2(-s.tangent.z,s.tangent.x);
-        for(const y of [.55,1.1]){o.position.set(x,y,z);o.rotation.set(0,yaw,0);o.updateMatrix();rails.setMatrixAt(ri++,o.matrix);}
-        o.position.set(x,.72,z);o.rotation.set(0,yaw,0);o.updateMatrix();posts.setMatrixAt(pi++,o.matrix);
+        if(this.isPitLane(x,z))continue;
+        const yaw=Math.atan2(-(bz-az),bx-ax),span=(Math.hypot(bx-ax,bz-az)+.14)/4.24;
+        // Offset curves have a different arc length from the centreline. Fit
+        // every panel to its true boundary chord so Armco stays continuous.
+        o.scale.set(span,1,1);
+        for(const y of [.38,.77,1.16]){o.position.set(x,y,z);o.rotation.set(0,yaw,0);o.updateMatrix();rails.setMatrixAt(ri++,o.matrix);}
+        o.scale.set(1,1,1);o.position.set(x,2.5,z);o.rotation.set(0,yaw,0);o.updateMatrix();posts.setMatrixAt(pi++,o.matrix);
+        o.scale.set(span,1,1);o.position.set(x,3.15,z);o.rotation.set(0,yaw,0);o.updateMatrix();fence.setMatrixAt(fi,o.matrix);
+        const outward=s.right.clone().multiplyScalar(sign);
+        o.position.set(x-outward.x*.31,5.10,z-outward.z*.31);o.rotation.set(-sign*.78,yaw,0);o.updateMatrix();fenceTop.setMatrixAt(fi,o.matrix);
+        o.scale.set(1,1,1);o.position.set(x-outward.x*.31,5.10,z-outward.z*.31);o.rotation.set(-sign*.78,yaw,0);o.updateMatrix();braces.setMatrixAt(fi,o.matrix);fi++;
       }
     }
-    rails.count=ri;posts.count=pi;rails.castShadow=true;posts.castShadow=true;this.group.add(rails,posts);
+    rails.count=ri;posts.count=pi;fence.count=fenceTop.count=braces.count=fi;
+    rails.name='armco-three-rail';posts.name='catch-fence-posts';fence.name='catch-fence-mesh';fenceTop.name='catch-fence-canted-top';braces.name='catch-fence-canted-braces';
+    for(const mesh of [rails,posts,fence,fenceTop,braces]){mesh.computeBoundingSphere();mesh.castShadow=false;this.group.add(mesh);}
+    this.group.userData.safetyFurniture={armcoRails:3,fencePanels:fi,height:5.5,offset:24,pitJoinsKeptClear:true};
     // Pit lane is connected to the straight at both ends; first version has no pit gameplay.
     const pp:number[]=[],ii:number[]=[];
     for(let i=0;i<=180;i++){
@@ -244,7 +284,12 @@ export class Track {
       for(const sign of [-1,1])pp.push(p.x+n.x*6*sign,.052,p.z+n.z*6*sign);
       if(i<180){const k=i*2;ii.push(k,k+1,k+2,k+1,k+3,k+2);}
     }
-    const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(pp,3));pg.setIndex(ii);pg.computeVertexNormals();const pm=new THREE.Mesh(pg,mat(0x68716f));pm.receiveShadow=true;this.group.add(pm);
+    const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.Float32BufferAttribute(pp,3));pg.setAttribute('uv',new THREE.Float32BufferAttribute(pp.flatMap((_,i)=>i%3===0?[pp[i]/5,pp[i+2]/5]:[]),2));pg.setIndex(ii);pg.computeVertexNormals();
+    // The pit ribbon overlaps the circuit at both joins. Keep its surface
+    // appearance/UVs identical so the joins do not paint pale polygons over
+    // the racing line; retain a separate instance for weather bindings.
+    const pitRoad=road.clone();pitRoad.name='monza-pit-asphalt';pitRoad.userData.weatherSurface='road';
+    const pm=new THREE.Mesh(pg,pitRoad);pm.receiveShadow=true;this.group.add(pm);
     const lineMat=mat(0xf6eb99);
     const line=new THREE.Mesh(new THREE.BoxGeometry(.15,.025,222),lineMat);line.position.set(-65,.081,36);this.group.add(line);
     // Start grid boxes, visible in the low follow camera.

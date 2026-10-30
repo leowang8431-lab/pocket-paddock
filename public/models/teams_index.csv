@@ -1,0 +1,12 @@
+﻿team_key,team,driver,number,glb,obj
+mclaren,McLaren,Lando Norris,4,out/teams/mclaren.glb,out/teams/mclaren.obj
+ferrari,Ferrari,Charles Leclerc,16,out/teams/ferrari.glb,out/teams/ferrari.obj
+redbull,Red Bull Ford,Max Verstappen,1,out/teams/redbull.glb,out/teams/redbull.obj
+mercedes,Mercedes,George Russell,63,out/teams/mercedes.glb,out/teams/mercedes.obj
+aston,Aston Martin,Fernando Alonso,14,out/teams/aston.glb,out/teams/aston.obj
+alpine,Alpine,Pierre Gasly,10,out/teams/alpine.glb,out/teams/alpine.obj
+williams,Williams,Alex Albon,23,out/teams/williams.glb,out/teams/williams.obj
+haas,Haas,Esteban Ocon,31,out/teams/haas.glb,out/teams/haas.obj
+racingbulls,Racing Bulls,Liam Lawson,30,out/teams/racingbulls.glb,out/teams/racingbulls.obj
+audi,Audi,Nico Hulkenberg,27,out/teams/audi.glb,out/teams/audi.obj
+cadillac,Cadillac,Sergio Perez,11,out/teams/cadillac.glb,out/teams/cadillac.obj

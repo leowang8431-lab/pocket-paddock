@@ -1,0 +1,37 @@
+/** Verify the self-contained release with all HTTP(S) requests blocked. Synthetic Gamepad API only. */
+import {chromium} from '@playwright/test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+const pkg=JSON.parse(await fs.readFile('package.json','utf8')),fileName=`Pocket-Paddock-Offline-${pkg.version}.html`;
+const browser=await chromium.launch({executablePath:process.env.CHROME_PATH??(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':undefined),headless:true,downloadsPath:path.resolve('work/offline-downloads')});
+const page=await browser.newPage({viewport:{width:1440,height:900},acceptDownloads:true}),errors=[],network=[];
+await page.addInitScript(()=>{window.__offlinePad={index:0,id:'Offline Standard Test Pad',mapping:'standard',connected:true,axes:[0,0,0,0],buttons:Array.from({length:17},()=>({value:0,pressed:false}))};window.__padConnected=false;Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>window.__padConnected?[window.__offlinePad]:[]});});
+page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
+page.on('request',r=>{if(/^https?:/.test(r.url()))network.push(r.url());});await page.route(/^https?:/,r=>r.abort());
+try{
+ await page.goto(pathToFileURL(path.resolve('outputs',fileName)).href,{waitUntil:'load'});
+ await page.locator('#model-status[data-status="ready"]').waitFor({timeout:30000});assert.equal(await page.evaluate(()=>typeof window.__PP),'undefined');
+ assert.equal(await page.locator('a.brand').getAttribute('href'),page.url());
+ await page.locator('[data-menu-view=side]').click();assert.equal(await page.locator('[data-menu-view=side]').getAttribute('aria-pressed'),'true');await page.locator('[data-menu-view=front]').click();
+ await page.locator('#camera-mode').selectOption('close');
+ await page.locator('#team-select').selectOption('mercedes');await page.locator('[data-driver="kimi_antonelli_12"]').click();
+ await page.locator('#start').click();await page.waitForFunction(()=>document.body.dataset.state==='racing');
+ await page.keyboard.down('w');await page.waitForTimeout(1450);const speed=Number(await page.locator('#speed').textContent());assert.ok(speed>65);
+ await page.waitForFunction(()=>!document.querySelector('#drs-toggle').disabled);await page.keyboard.press('f');await page.waitForTimeout(150);assert.equal(await page.locator('#drs-toggle').getAttribute('aria-pressed'),'true');
+ await page.keyboard.up('w');await page.keyboard.down('s');await page.waitForTimeout(150);await page.keyboard.up('s');assert.equal(await page.locator('#drs-toggle').getAttribute('aria-pressed'),'false');
+ await page.keyboard.press('Escape');await page.waitForFunction(()=>document.body.dataset.state==='paused');
+ await page.locator('#diagnostics').click();await page.locator('#diagnostics-modal').waitFor({state:'visible'});const report=JSON.parse(await page.locator('#diagnostics-report').textContent());assert.equal(report.protocol,'file:');assert.equal(report.secureContext,true);assert.equal(report.game.camera.mode,'close');assert.ok(report.game.powertrain.shiftSerial>0);assert.ok(report.game.powertrain.rpm>=3300);
+ const downloadPromise=page.waitForEvent('download');await page.locator('#diagnostics-export').click();const download=await downloadPromise;assert.equal(download.suggestedFilename(),'Pocket-Paddock-diagnostics.json');assert.equal(await download.failure(),null);const downloaded=JSON.parse(await fs.readFile(await download.path(),'utf8'));assert.equal(downloaded.version,pkg.version);assert.equal(downloaded.protocol,'file:');
+ await page.keyboard.press('Escape');assert.equal(await page.locator('#diagnostics-modal').isVisible(),false);assert.equal(await page.locator('body').getAttribute('data-state'),'paused');
+ const oldView=await page.locator('#camera-label').textContent();await page.keyboard.press('c');await page.waitForTimeout(150);assert.notEqual(await page.locator('#camera-label').textContent(),oldView);assert.equal(await page.locator('body').getAttribute('data-state'),'paused');
+ await page.locator('#language').selectOption('en');await page.locator('#weather').selectOption('rainy');await page.locator('#garage-back').click();await page.waitForFunction(()=>document.body.dataset.state==='menu');assert.match(await page.locator('#weather-condition').textContent(),/Rainy/);
+ const press=async index=>{await page.evaluate(index=>{window.__offlinePad.buttons[index]={value:1,pressed:true};},index);await page.waitForTimeout(120);await page.evaluate(index=>{window.__offlinePad.buttons[index]={value:0,pressed:false};},index);await page.waitForTimeout(120);};
+ await page.locator('#race-mode').selectOption('race');assert.equal(await page.locator('#competition-rows li').count(),6);
+ await page.waitForFunction(()=>!document.querySelector('#start').disabled);
+ await page.evaluate(()=>{window.__padConnected=true;});await page.waitForFunction(()=>document.querySelector('#gamepad-status').dataset.connected==='true');await press(0);await page.waitForFunction(()=>document.body.dataset.state==='racing');await page.evaluate(()=>{window.__offlinePad.buttons[7]={value:.28,pressed:false};});await page.waitForTimeout(950);assert.equal(await page.locator('#throttle-pressure-value').textContent(),'25%');assert.ok(Number(await page.locator('#speed').textContent())>5);await page.evaluate(()=>{window.__padConnected=false;});await page.waitForFunction(()=>document.body.dataset.state==='paused');await page.waitForTimeout(300);assert.equal(await page.locator('#throttle-pressure-value').textContent(),'0%');
+ assert.deepEqual(errors,[]);assert.deepEqual(network,[]);
+ const result={status:'passed',file:fileName,networkBlocked:true,httpRequests:network.length,embeddedModelsLoaded:true,secureContext:true,drivingSpeed:speed,drsOpensAndBrakingCloses:true,diagnosticsAndPause:true,diagnosticsDownload:true,showroomViewsAndCameraCycle:true,sharedGearboxHud:true,weatherAndLanguage:true,syntheticGamepadFileProtocol:true,physicalControllerTested:false,errors};
+ await fs.writeFile('outputs/离线版验证.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));await page.screenshot({path:'outputs/offline-game.png'});
+}catch(error){console.error(error);console.error(JSON.stringify({errors,network}));process.exitCode=1;await page.screenshot({path:'outputs/offline-failure.png'}).catch(()=>{});}finally{await browser.close();}

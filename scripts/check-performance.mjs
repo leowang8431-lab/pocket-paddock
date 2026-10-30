@@ -15,7 +15,7 @@ const executablePath=process.env.CHROME_PATH??(process.platform==='win32'?'C:/Pr
 const outPath=path.resolve(args.output??`work/perf-${label}.json`);
 const report={label,requestedURL:url,viewport:{width:1440,height:900},cpuThrottle:cpu,sampleMs,createdUTC:new Date().toISOString(),scenarios:[],limitations:'Headless Chrome on this machine. CDP CPU throttling is synthetic; this is not a real-phone or player-GPU FPS guarantee.'};
 await fs.mkdir(path.dirname(outPath),{recursive:true});
-const browser=await chromium.launch({executablePath,headless:true,args:['--enable-unsafe-swiftshader']});
+const browser=await chromium.launch({executablePath,headless:true,args:['--enable-unsafe-swiftshader',...(args.software==='true'?['--use-gl=angle','--use-angle=swiftshader']:[])]});
 const quantile=(a,p)=>{if(!a.length)return null;const b=[...a].sort((x,y)=>x-y);return b[Math.min(b.length-1,Math.floor((b.length-1)*p))];};
 
 async function measure(page,duration){
@@ -89,6 +89,9 @@ try{
     const response=await page.goto(url,{waitUntil:'networkidle',timeout:45000});
     await page.waitForSelector('#start',{state:'visible',timeout:20000});
     await page.locator('#loading').waitFor({state:'hidden',timeout:20000});
+    if(args.weather&&await page.locator('#weather').count())await page.locator('#weather').selectOption(args.weather);
+    if(args.quality)await page.locator('#quality').selectOption(args.quality);
+    if(args.mode&&await page.locator('#race-mode').count())await page.locator('#race-mode').selectOption(args.mode);
     await page.waitForTimeout(1500);
     const environment=await page.evaluate(()=>{
       const canvas=document.querySelector('#viewport canvas');const gl=canvas?.getContext('webgl2')??canvas?.getContext('webgl');const debug=gl?.getExtension('WEBGL_debug_renderer_info');

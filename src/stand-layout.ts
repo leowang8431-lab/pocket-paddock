@@ -17,11 +17,21 @@ export interface StandLayout {
   minColliderClearance:number;
 }
 
+/** The front row and facade stay fixed. Extra rows grow backwards, with a
+ * matching taller/deeper roof, occupied base and conservative collision box. */
+export function standDimensions(stand:Pick<StandLayout,'rows'>){
+  const extraRows=Math.max(0,stand.rows-6),depthExtension=extraRows*1.75;
+  return {lastRowZ:(stand.rows-1)*1.75,depthExtension,riseExtension:extraRows*.68,
+    baseMinZ:-2.5,baseMaxZ:12.5+depthExtension,roofMinZ:-4.3,roofMaxZ:14.3+depthExtension,
+    baseCenterZ:5+depthExtension/2,baseDepth:15+depthExtension,
+    roofCenterZ:5+depthExtension/2,roofDepth:18+depthExtension,roofY:10.6+extraRows*.68};
+}
+
 /** Local -Z is the viewing front; +Z contains the rising tiers. Bounds include
  * the roof overhang, its small pitch, support columns, fascia and base slab. */
-export function standLocalBounds(stand:Pick<StandLayout,'width'|'covered'>):Bounds2 {
-  const half=stand.width/2+(stand.covered?2.5:1);
-  return {minX:-half,maxX:half,minZ:stand.covered?-4.3:-2.5,maxZ:stand.covered?14.3:12.5};
+export function standLocalBounds(stand:Pick<StandLayout,'width'|'covered'|'rows'>):Bounds2 {
+  const half=stand.width/2+(stand.covered?2.5:1),d=standDimensions(stand);
+  return {minX:-half,maxX:half,minZ:stand.covered?d.roofMinZ:d.baseMinZ,maxZ:stand.covered?d.roofMaxZ:d.baseMaxZ};
 }
 
 export function distanceToStand(x:number,z:number,stand:StandLayout):number {
@@ -38,8 +48,8 @@ export function standFootprint(stand:StandLayout):Point2[] {
 /** Ground collision uses the occupied base, not the raised roof. This
  * conservative world AABB is also checked against every track segment. */
 export function standCollider(stand:StandLayout):Bounds2 {
-  const c=Math.cos(stand.yaw),s=Math.sin(stand.yaw),half=stand.width/2+1;
-  const points=[[-half,-2.5],[half,-2.5],[half,12.5],[-half,12.5]].map(([x,z])=>({x:stand.x+c*x+s*z,z:stand.z-s*x+c*z}));
+  const c=Math.cos(stand.yaw),s=Math.sin(stand.yaw),half=stand.width/2+1,d=standDimensions(stand);
+  const points=[[-half,d.baseMinZ],[half,d.baseMinZ],[half,d.baseMaxZ],[-half,d.baseMaxZ]].map(([x,z])=>({x:stand.x+c*x+s*z,z:stand.z-s*x+c*z}));
   return {minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),minZ:Math.min(...points.map(p=>p.z)),maxZ:Math.max(...points.map(p=>p.z))};
 }
 
@@ -77,15 +87,15 @@ export function createStandLayouts(track:LayoutTrack):StandLayout[] {
     return nearest/track.samples.length*track.length;
   };
   const specs=[
-    {id:'centrale',distance:nearestDistance(-85,35),offset:40,width:106,rows:6,covered:true},
-    {id:'straight-north',distance:nearestDistance(-85,-96),offset:40,width:62,rows:5,covered:false},
-    {id:'straight-south',distance:nearestDistance(-85,164),offset:40,width:48,rows:5,covered:true},
-    {id:'rettifilo',distance:track.corners[0].distance,offset:50,width:46,rows:5,covered:false},
-    {id:'roggia',distance:track.corners[2].distance,offset:42,width:46,rows:5,covered:false},
-    {id:'ascari',distance:track.corners[6].distance,offset:44,width:54,rows:5,covered:false},
+    {id:'centrale',distance:nearestDistance(-85,35),offset:40,width:106,rows:12,covered:true},
+    {id:'straight-north',distance:nearestDistance(-85,-96),offset:40,width:62,rows:10,covered:false},
+    {id:'straight-south',distance:nearestDistance(-85,164),offset:40,width:48,rows:10,covered:true},
+    {id:'rettifilo',distance:track.corners[0].distance,offset:50,width:46,rows:10,covered:false},
+    {id:'roggia',distance:track.corners[2].distance,offset:42,width:46,rows:10,covered:false},
+    {id:'ascari',distance:track.corners[6].distance,offset:44,width:54,rows:10,covered:false},
     // The old negative offset put this stand on the inside, across the return
     // straight. Place it outside the whole Alboreto hairpin instead.
-    {id:'alboreto',distance:track.corners[7].distance,offset:51,width:48,rows:5,covered:false},
+    {id:'alboreto',distance:track.corners[7].distance,offset:51,width:48,rows:10,covered:false},
   ];
   const result:StandLayout[]=[];
   for(const spec of specs){

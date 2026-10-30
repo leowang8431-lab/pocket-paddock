@@ -29,7 +29,7 @@ function linearPit(x:number,z:number):boolean {
 function referenceSurface(x:number,z:number){
   if(linearPit(x,z))return 'asphalt';
   const sample=linearNearest(x,z),d=Math.hypot(sample.point.x-x,sample.point.z-z),t=sample.distance/track.length;
-  if(d<=8.8)return 'asphalt';
+  if(d<=track.widthAt(sample.distance)/2+.8)return 'asphalt';
   const gravel=(t>.14&&t<.22)||(t>.35&&t<.53)||(t>.64&&t<.71)||(t>.85&&t<.94);
   return d>11&&d<23&&gravel?'gravel':'grass';
 }

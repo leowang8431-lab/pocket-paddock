@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { VehiclePhysics, type Controls, type PhysicsTrack } from '../src/physics.ts';
 import { Track } from '../src/track.ts';
 import { RaceSession } from '../src/race.ts';
+import {fullSteerYawForSpeed,lateralGripForSpeed,steeringAngleForSpeed,WHEELBASE} from '../src/handling.ts';
 
 const idle:Controls={throttle:false,brake:false,left:false,right:false};
 // No edges or obstacles: isolate the tire model from collision responses.
@@ -19,11 +20,14 @@ test('maximum-speed steering cannot demand unlimited lateral tire force',()=>{
     const velocityHeading=Math.atan2(vehicle.vx,vehicle.vz);
     const angle=Math.atan2(Math.sin(velocityHeading-previousVelocityHeading),Math.cos(velocityHeading-previousVelocityHeading));
     maximumLateralAcceleration=Math.max(maximumLateralAcceleration,Math.abs(angle)/dt*Math.abs(vehicle.speed));
+    assert.ok(Math.abs(angle)/dt*Math.abs(vehicle.speed)<=lateralGripForSpeed(vehicle.speed)+.01);
+    assert.ok(Math.abs(vehicle.yawRate)*Math.abs(vehicle.speed)<=lateralGripForSpeed(vehicle.speed)+.01);
     previousVelocityHeading=velocityHeading;
   }
-  assert.ok(maximumLateralAcceleration<=14.5+.01);
-  assert.ok(Math.abs(vehicle.yawRate)*vehicle.speed<=14.5+.01);
-  assert.ok(vehicle.speed/Math.abs(vehicle.yawRate)>100,'240 km/h has a wide minimum turning radius');
+  assert.ok(maximumLateralAcceleration>19&&maximumLateralAcceleration<24,
+    'bounded high-speed aero grip is greater than the former fixed 14.5 budget');
+  const radius=vehicle.speed/Math.abs(vehicle.yawRate);
+  assert.ok(radius>65&&radius<85,'240 km/h turns more readily but still needs a broad radius');
   assert.equal(vehicle.sliding,true);
   assert.equal(vehicle.gripUsage,1.5);
 });
@@ -39,13 +43,16 @@ test('braking before turn-in allows a substantially tighter turn',()=>{
     braked.update(dt,{...idle,left:true},openAsphalt);
   }
   const fastRadius=Math.abs(fast.speed/fast.yawRate),slowRadius=Math.abs(braked.speed/braked.yawRate);
-  assert.ok(fastRadius>100);
+  assert.ok(fastRadius>65&&fastRadius<85);
   assert.ok(slowRadius<16);
-  assert.ok(fastRadius>slowRadius*6);
+  assert.ok(fastRadius>slowRadius*4);
 });
 
 test('hard braking spends tire capacity that would otherwise be available to steer',()=>{
   const coasting=rolling(30),braking=rolling(30);coasting.steering=braking.steering=1;
+  // Full pressure is reached progressively; compare fully applied brakes,
+  // rather than the intentionally gentle first fraction of the pedal ramp.
+  tick(braking,.25,{...idle,brake:true});braking.speed=30;braking.vz=30;
   tick(coasting,.1,{...idle,left:true});
   tick(braking,.1,{...idle,left:true,brake:true});
   assert.ok(braking.speed<coasting.speed);
@@ -77,7 +84,7 @@ function controlsFor(vehicle:VehiclePhysics,track:Track,fullThrottle:boolean):Co
     const localSpeed=Math.max(8,Math.min(40,Math.sqrt(8.3/Math.max(.0001,curvature))));
     targetSpeed=Math.min(targetSpeed,Math.sqrt(localSpeed*localSpeed+42*Math.max(0,ahead-8)));
   }
-  const geometricYaw=Math.abs(vehicle.speed)/3.1*Math.tan(.48)/(1+Math.abs(vehicle.speed)*.055);
+  const geometricYaw=fullSteerYawForSpeed(Math.abs(vehicle.speed));
   const required=2*Math.abs(vehicle.speed)*Math.sin(error)/lookahead/Math.max(.01,geometricYaw);
   return{throttle:fullThrottle||vehicle.speed<targetSpeed,brake:!fullThrottle&&vehicle.speed>targetSpeed+.8,left:required>vehicle.steering+.025,right:required<vehicle.steering-.025};
 }
@@ -103,4 +110,40 @@ test('real Monza lap rewards early braking and punishes holding full throttle',(
   assert.ok(skilled.maximumLateral<4);assert.ok(skilled.brakingSteps>120);
   assert.ok(flatOut.maximumLateral>11);assert.equal(flatOut.hasInvalidated,true);
   assert.equal(flatOut.brakingSteps,0);assert.equal(flatOut.race.best,null);
+});
+
+test('slow steering circles are broader while high-speed grip remains finite and continuous',()=>{
+  const radii:number[]=[];
+  for(const speed of [2,6,13,25,40]){
+    const car=rolling(speed);
+    for(let i=0;i<360;i++){car.speed=speed;car.update(dt,{...idle,left:true},openAsphalt);}
+    radii.push(Math.abs(car.speed/car.yawRate));
+  }
+  assert.ok(radii[0]>11.8&&radii[0]<13,'walking-speed steering cannot pivot in a tiny circle');
+  assert.ok(radii[1]>12&&radii[1]<14.5);
+  assert.ok(radii[2]>14&&radii[2]<16.5);
+  assert.ok(radii[4]>65&&radii[4]<85);
+  for(let i=1;i<radii.length;i++)assert.ok(radii[i]>radii[i-1],'radius increases smoothly with speed');
+  for(let speed=0;speed<=45;speed+=.1){
+    assert.ok(Math.abs(steeringAngleForSpeed(speed+.001)-steeringAngleForSpeed(speed))<.00001);
+    assert.ok(lateralGripForSpeed(speed)<26);
+    assert.ok(lateralGripForSpeed(speed,'rainy')<lateralGripForSpeed(speed));
+  }
+});
+
+test('partial steering and partial brake inputs preserve analog precision',()=>{
+  const full=rolling(6),half=rolling(6);
+  for(let i=0;i<240;i++){
+    full.speed=half.speed=6;
+    full.update(dt,{...idle,steerAmount:1},openAsphalt);
+    half.update(dt,{...idle,steerAmount:.5},openAsphalt);
+  }
+  assert.ok(Math.abs(half.steering-.5)<.0001);
+  assert.ok(Math.abs(half.yawRate/full.yawRate-.5)<.001);
+  assert.ok(Math.abs(half.frontWheelAngle-.5*steeringAngleForSpeed(half.speed))<.0001);
+  const hard=rolling(25),gentle=rolling(25);
+  tick(hard,.4,{...idle,brakeAmount:1});tick(gentle,.4,{...idle,brakeAmount:.25});
+  assert.ok(hard.speed<gentle.speed-6);assert.equal(gentle.brakePressure,.25);
+  const bad=rolling(8);bad.update(dt,{...idle,left:true,steerAmount:NaN,brakeAmount:NaN,throttleAmount:NaN},openAsphalt);
+  assert.ok(Number.isFinite(bad.speed+bad.heading+bad.steering));assert.ok(bad.steering>0);
 });

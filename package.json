@@ -1,7 +1,7 @@
 {
   "name": "pocket-paddock",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.11.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -9,7 +9,18 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "node scripts/check-browser.mjs",
-    "test:performance": "node scripts/check-performance.mjs"
+    "test:performance": "node scripts/check-performance.mjs",
+    "optimize:models": "node scripts/optimize-models.mjs",
+    "test:models": "node scripts/check-models.mjs",
+    "test:experience": "node scripts/check-experience.mjs",
+    "test:drs": "node scripts/check-drs.mjs",
+    "test:gamepad": "node scripts/check-gamepad.mjs",
+    "build:offline": "npm run build && node scripts/build-offline.mjs",
+    "test:offline": "node scripts/check-offline.mjs",
+    "test:competition": "node scripts/check-competition.mjs",
+    "test:pit-fleet": "node scripts/check-pit-fleet.mjs",
+    "test:presentation": "node scripts/check-presentation.mjs",
+    "test:audio": "node scripts/check-audio.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"
@@ -17,6 +28,8 @@
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@types/three": "^0.180.0",
+    "esbuild": "^0.28.2",
+    "meshoptimizer": "^0.22.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^7.1.12"

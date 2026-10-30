@@ -73,10 +73,10 @@ async function keyboardDrive(fullThrottle){
       for(let ahead=0;ahead<=65;ahead+=4){
         const a=track.sampleAt(near.distance+ahead),b=track.sampleAt(near.distance+ahead+4);
         const curvature=Math.acos(Math.max(-1,Math.min(1,a.tangent.x*b.tangent.x+a.tangent.z*b.tangent.z)))/4;
-        const localSpeed=Math.max(8,Math.min(40,Math.sqrt(8.3/Math.max(.0001,curvature))));
-        targetSpeed=Math.min(targetSpeed,Math.sqrt(localSpeed*localSpeed+42*Math.max(0,ahead-8)));
+        const localSpeed=Math.max(8,Math.min(40,Math.sqrt(8.3*(s.weather?.mode==='rainy'?.68:1)/Math.max(.0001,curvature))));
+        targetSpeed=Math.min(targetSpeed,Math.sqrt(localSpeed*localSpeed+42*(s.weather?.mode==='rainy'?.74:1)*Math.max(0,ahead-8)));
       }
-      const requestedYawAtFullSteer=(Math.abs(s.speed)/3.1)*Math.tan(.48)/(1+Math.abs(s.speed)*.055);
+      const requestedYawAtFullSteer=game.steerYaw(Math.abs(s.speed));
       const required=(2*Math.abs(s.speed)*Math.sin(error)/lookahead)/Math.max(.01,requestedYawAtFullSteer);
       const braking=!fullThrottle&&s.speed>targetSpeed+.8;
       if(braking)state.brakingFrames++;
@@ -92,14 +92,16 @@ async function keyboardDrive(fullThrottle){
 
 try{
   await page.goto(baseURL,{waitUntil:'networkidle'});
-  await page.waitForFunction(()=>window.__PP?.snapshot().state==='menu');
+  await page.waitForFunction(()=>window.__PP?.snapshot().state==='menu'&&window.__PP.snapshot().car.status==='ready');
+  if(process.env.PP_WEATHER==='rainy')await page.locator('#weather').selectOption('rainy');
   await record('load',{state:await snapshot()});
-  // Keyboard focus must select a livery without activating the global Enter shortcut.
-  await page.locator('[data-livery="teal"]').focus();await page.keyboard.press('Enter');
+  // Native selects and driver buttons must not activate the global Enter shortcut.
+  await page.locator('#team-select').selectOption('mclaren');
+  await page.locator('#team-select').focus();await page.keyboard.press('Enter');await page.keyboard.press('Escape');
   assert.equal((await snapshot()).state,'menu');
-  assert.equal(await page.locator('[data-livery="teal"]').getAttribute('aria-pressed'),'true');
-  await page.locator('[data-helmet="norris-2024"]').focus();await page.keyboard.press('Space');
-  assert.equal(await page.locator('[data-helmet="norris-2024"]').getAttribute('aria-pressed'),'true');
+  await page.locator('[data-driver="oscar_piastri_81"]').focus();await page.keyboard.press('Space');
+  assert.equal(await page.locator('[data-driver="oscar_piastri_81"]').getAttribute('aria-pressed'),'true');
+  assert.equal((await snapshot()).car.driver,'oscar_piastri_81');
   await screenshot('garage');
   await record('keyboard-settings');
 
@@ -152,7 +154,7 @@ try{
   assert.equal(braking.lapResult.valid,true);assert.ok(braking.last.best>12);
   await screenshot('lap');await record('braking-valid-full-lap',{...braking,trace:undefined});
 
-  await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>window.__PP);
+  await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>window.__PP?.snapshot().car.status==='ready');
   assert.equal((await snapshot()).best,braking.last.best);await record('best-persists-after-reload',{best:(await snapshot()).best});
   await page.setViewportSize({width:390,height:844});assert.ok(await page.locator('#start').isVisible());
   assert.equal(await page.locator('.touch-controls').isVisible(),false);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));

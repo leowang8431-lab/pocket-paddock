@@ -171,3 +171,38 @@ test('holding the brake from rest permits bounded reversing', () => {
   assert.ok(vehicle.speed >= -7);
   assert.ok(vehicle.z < 0);
 });
+
+test('brake pressure builds progressively and releases promptly for trail braking',()=>{
+  const vehicle=new VehiclePhysics();vehicle.speed=30;vehicle.vz=30;
+  drive(vehicle,.05,brake,straight());const early={pressure:vehicle.brakePressure,speed:vehicle.speed};
+  drive(vehicle,.05,brake,straight());const middle={pressure:vehicle.brakePressure,speed:vehicle.speed};
+  drive(vehicle,.1,brake,straight());
+  assert.ok(early.pressure>.15&&early.pressure<.4);assert.ok(middle.pressure>.4&&middle.pressure<.7);assert.equal(vehicle.brakePressure,1);
+  assert.ok((early.speed-middle.speed)>(30-early.speed),'braking strengthens as pressure builds');
+  drive(vehicle,.05,idle,straight());assert.ok(vehicle.brakePressure>0&&vehicle.brakePressure<.5);
+  drive(vehicle,.05,idle,straight());assert.equal(vehicle.brakePressure,0);
+});
+
+test('brake has priority over simultaneous throttle and stopping does not kick backwards',()=>{
+  const car=new VehiclePhysics();car.speed=18;car.vz=18;
+  drive(car,.6,{...gas,brake:true},straight());assert.ok(car.speed<3);
+  for(let i=0;i<120&&car.speed>0;i++)car.update(1/120,brake,straight());
+  assert.equal(car.speed,0);
+  drive(car,.1,brake,straight());assert.equal(car.speed,0,'a short full stop cannot immediately jolt into reverse');
+  drive(car,.5,idle,straight());assert.equal(car.speed,0,'released residual brake pressure cannot reverse the car');
+});
+
+test('DRS reduces drag with a gradual speed gain and retains momentum on closure',()=>{
+  const closed=new VehiclePhysics(),open=new VehiclePhysics();
+  closed.speed=open.speed=40;closed.vz=open.vz=40;closed.throttlePressure=open.throttlePressure=1;open.drsActive=true;
+  open.update(1/120,gas,straight());assert.ok(open.speed>40&&open.speed<40.05,'no velocity jump when the wing opens');
+  drive(closed,10,gas,straight());drive(open,10,gas,straight());assert.ok(closed.speed<=40);assert.ok(open.speed>43.5&&open.speed<=44.5);
+  const before=open.speed;open.drsActive=false;open.update(1/120,gas,straight());assert.ok(open.speed>before-.05&&open.speed<=before,'closing the wing decelerates without a hard speed clamp');
+  drive(open,4,gas,straight());assert.ok(open.speed<40);
+  const wet=new VehiclePhysics();wet.weather='rainy';wet.drsActive=true;drive(wet,20,gas,straight());assert.ok(wet.speed<=40,'wet conditions never receive the DRS speed gain');
+});
+
+test('reset clears pedal pressure, actual wheel angle and DRS state while retaining weather',()=>{
+  const car=new VehiclePhysics();car.weather='rainy';Object.assign(car,{brakePressure:.6,throttlePressure:.8,frontWheelAngle:.2,drsActive:true});
+  car.reset(0,0,0);assert.equal(car.brakePressure,0);assert.equal(car.throttlePressure,0);assert.equal(car.frontWheelAngle,0);assert.equal(car.drsActive,false);assert.equal(car.weather,'rainy');
+});
