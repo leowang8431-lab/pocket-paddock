@@ -15,16 +15,16 @@ export function createDrsMarkers(track:Track,zones:readonly DrsZone[]):THREE.Gro
   const place=(geometry:THREE.BufferGeometry,position:THREE.Vector3,rotation:THREE.Euler)=>geometry.applyMatrix4(new THREE.Matrix4().compose(position,new THREE.Quaternion().setFromEuler(rotation),new THREE.Vector3(1,1,1)));
   for(const zone of zones){
     for(const [distance,atlasRow] of [[zone.start,zone.id-1],[zone.detection,2],[zone.end,3]]){
-      const s=track.sampleAt(distance),position=s.point.clone().addScaledVector(s.right,-11.7);position.y=2.1;
+      const s=track.sampleAt(distance),position=s.point.clone().addScaledVector(s.right,-11.7);position.y=s.point.y+2.1;
       const sign=new THREE.PlaneGeometry(3.2,.9),uv=sign.attributes.uv;
       for(let i=0;i<uv.count;i++)uv.setY(i,1-(atlasRow+(1-uv.getY(i)))/4);
       signParts.push(place(sign,position,new THREE.Euler(0,Math.atan2(-s.tangent.x,-s.tangent.z),0)));
-      postParts.push(place(new THREE.BoxGeometry(.09,1.9,.09),position.clone().setY(.95),new THREE.Euler()));
+      postParts.push(place(new THREE.BoxGeometry(.09,1.9,.09),position.clone().setY(s.point.y+.95),new THREE.Euler()));
     }
     const sample=track.sampleAt(zone.start),yaw=Math.atan2(sample.tangent.x,sample.tangent.z);
-    paintParts.push(place(new THREE.BoxGeometry(track.widthAt(sample.distance),.018,.22),sample.point.clone().setY(.071),new THREE.Euler(0,yaw,0)));
+    paintParts.push(place(new THREE.BoxGeometry(track.widthAt(sample.distance),.018,.22),sample.point.clone().add(new THREE.Vector3(0,.071,0)),new THREE.Euler(0,yaw,0)));
     // Short edge dashes, keeping the racing line and finish grid readable.
-    for(let d=zone.start;d<zone.end;d+=10){const s=track.sampleAt(d);for(const side of [-1,1])paintParts.push(place(new THREE.BoxGeometry(.14,.018,4),s.point.clone().addScaledVector(s.right,side*track.roadOffsetAt(s.distance,7.55)).setY(.07),new THREE.Euler(0,Math.atan2(s.tangent.x,s.tangent.z),0)));}
+    for(let d=zone.start;d<zone.end;d+=10){const s=track.sampleAt(d);for(const side of [-1,1])paintParts.push(place(new THREE.BoxGeometry(.14,.018,4),s.point.clone().addScaledVector(s.right,side*(track.widthAt(s.distance)/2-.45)).add(new THREE.Vector3(0,.07,0)),new THREE.Euler(0,Math.atan2(s.tangent.x,s.tangent.z),0)));}
   }
   const add=(parts:THREE.BufferGeometry[],material:THREE.Material,name:string)=>{const geometry=mergeGeometries(parts,false);parts.forEach(p=>p.dispose());if(geometry){const mesh=new THREE.Mesh(geometry,material);mesh.name=name;root.add(mesh);}};
   add(signParts,new THREE.MeshBasicMaterial({map,side:THREE.DoubleSide}),'drs-signs');

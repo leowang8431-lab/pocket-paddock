@@ -7,13 +7,16 @@ export class SkidMarks {
   private index=0;private count=0;private time=0;private transform=new THREE.Object3D();
   constructor(){this.mesh.count=0;this.mesh.frustumCulled=false;}
   clear(){this.index=0;this.count=0;this.mesh.count=0;}
-  update(car:VehiclePhysics,dt:number,active:boolean){
+  update(car:VehiclePhysics,dt:number,active:boolean,heightAt?:(x:number,z:number)=>number){
     this.time+=dt;
     if(!active||!car.sliding||Math.abs(car.lateralSpeed)<.35||car.surface!=='asphalt'||Math.abs(car.speed)<7||this.time<.035)return;
     const length=Math.min(1.9,Math.abs(car.speed)*Math.min(this.time,.06)+.15);this.time=0;
     for(const side of [-1,1]){
       this.transform.position.set(car.x-Math.sin(car.heading)*1.35+Math.cos(car.heading)*side*.94,.104,car.z-Math.cos(car.heading)*1.35-Math.sin(car.heading)*side*.94);
-      this.transform.rotation.set(0,Math.atan2(car.vx,car.vz),0);this.transform.scale.set(1,1,length);this.transform.updateMatrix();
+      const yaw=Math.atan2(car.vx,car.vz),x=this.transform.position.x,z=this.transform.position.z;
+      const slope=heightAt?(heightAt(x+Math.sin(yaw),z+Math.cos(yaw))-heightAt(x-Math.sin(yaw),z-Math.cos(yaw)))/2:0;
+      this.transform.position.y=(heightAt?.(x,z)??0)+.104;
+      this.transform.rotation.set(-Math.atan(slope),yaw,0,'YXZ');this.transform.scale.set(1,1,length);this.transform.updateMatrix();
       this.mesh.setMatrixAt(this.index,this.transform.matrix);this.index=(this.index+1)%480;this.count=Math.min(this.count+1,480);
     }
     this.mesh.count=this.count;this.mesh.instanceMatrix.needsUpdate=true;

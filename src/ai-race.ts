@@ -100,7 +100,8 @@ export class AiRace {
         if(Math.abs(rival.lateral-blocker.other.lateral)<2.5&&blocker.gap<8)target=Math.min(target,Math.max(0,blocker.other.speed+(blocker.gap-5)*1.1));
       }
       const acceleration=12.4*wet.acceleration*(1-rival.speed/55),braking=25*wet.braking;
-      rival.speed=clamp(rival.speed+clamp(target-rival.speed,-braking*dt,acceleration*dt),0,40);
+      const gradeForce=5.886*Math.sin(Math.atan(this.track.gradeAt(rival.distance)));
+      rival.speed=clamp(rival.speed+clamp(target-rival.speed,-braking*dt,acceleration*dt)-gradeForce*dt,0,40);
       const previousDistance=rival.distance,next=previousDistance+rival.speed*dt,finish=this.totalLaps*this.track.length;
       const previousLateral=rival.lateral;
       rival.lateral+=clamp(plan.targetLane-rival.lateral,-.95*dt,.95*dt);

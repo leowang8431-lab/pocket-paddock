@@ -1,3 +1,4 @@
+import {CIRCUITS,type CircuitId} from './circuits';
 import {formatTime, type RaceSession} from './race';
 import type {Track} from './track';
 import type {VehiclePhysics} from './physics';
@@ -33,6 +34,7 @@ export class UI {
   private mapProject:(x:number,z:number)=>number[]=()=>[0,0];
   private displayedTeam?:TeamId;
   language:Language='zh';
+  private circuitId:CircuitId='monza';
   private selectedTeam:TeamId=DEFAULT_TEAM;private selectedDriver:DriverId=DEFAULT_DRIVER;
   private weather:'sunny'|'rainy'='sunny';private soundEnabled=false;
   private modelState:'loading'|'ready'|'fallback'='loading';
@@ -48,12 +50,12 @@ export class UI {
     this.root=document.querySelector('#app')!;
     this.root.innerHTML=`
     <div id="viewport" aria-label="3D 赛车场景"></div>
-    <header class="topbar"><a class="brand" href="./" aria-label="口袋围场首页"><span class="brand-mark">pp<span>·</span></span><span>Pocket Paddock<small>口 袋 围 场</small></span></a><div class="event-label"><span class="live-dot"></span><span id="event-title">自由计时赛</span> <i></i> MONZA, ITALIA <span class="italy">▮▮▮</span></div><label class="quality-control" title="自动模式会根据帧率调整画质；流畅模式优先降低渲染负担">画质<select id="quality" aria-label="画质设置"><option value="auto">自动</option><option value="performance">流畅</option><option value="balanced">均衡</option><option value="high">精细</option></select><span id="fps" aria-label="帧率">— FPS</span></label><button class="icon-button" id="sound" title="开启引擎声音" aria-label="开启引擎声音">声音 关</button></header>
-    <section class="menu-copy menu-only"><div class="eyebrow"><span>11</span> THE TEMPLE OF SPEED</div><h1>下一圈，<br><em>由你领跑。</em></h1><p>选一支车队，找到你的节奏。<br>在蒙扎，把每一个弯变成优势。</p><div class="hero-features"><span>晴雨切换</span><span>键盘 / 手柄</span><span>单人 / 人机</span></div><div class="track-pill"><span class="italy">▮▮▮</span><strong>蒙扎</strong><span>意大利 · 艺术化短赛道</span><span class="pill-arrow">↗</span></div></section>
+    <header class="topbar"><a class="brand" href="./" aria-label="口袋围场首页"><span class="brand-mark">pp<span>·</span></span><span>Pocket Paddock<small>口 袋 围 场</small></span></a><div class="event-label"><span class="live-dot"></span><span id="event-title">自由计时赛</span> <i></i><span id="circuit-title">MONZA, ITALIA</span> <span class="italy">▮▮▮</span></div><label class="quality-control" title="自动模式会根据帧率调整画质；流畅模式优先降低渲染负担">画质<select id="quality" aria-label="画质设置"><option value="auto">自动</option><option value="performance">流畅</option><option value="balanced">均衡</option><option value="high">精细</option></select><span id="fps" aria-label="帧率">— FPS</span></label><button class="icon-button" id="sound" title="开启引擎声音" aria-label="开启引擎声音">声音 关</button></header>
+    <section class="menu-copy menu-only"><div class="eyebrow"><span>12</span> <b id="circuit-kicker">THE TEMPLE OF SPEED</b></div><h1>下一圈，<br><em>由你领跑。</em></h1><p>选一支车队，找到你的节奏。<br>在蒙扎，把每一个弯变成优势。</p><div class="hero-features"><span>晴雨切换</span><span>键盘 / 手柄</span><span>单人 / 人机</span></div><div class="track-pill"><span class="italy">▮▮▮</span><strong>蒙扎</strong><span>意大利 · 艺术化短赛道</span><span class="pill-arrow">↗</span></div></section>
     <section class="car-showcase menu-only" aria-label="赛车展示"><div class="showcase-title"><span class="showcase-number" id="showcase-number">16</span><div><span class="eyebrow">YOUR CONTENDER</span><strong id="showcase-team">Ferrari</strong><small id="showcase-driver">Charles Leclerc</small></div></div><div class="showcase-views" role="group" aria-label="展示角度"><button data-menu-view="front" aria-pressed="true">前侧</button><button data-menu-view="side" aria-pressed="false">侧面</button><button data-menu-view="rear" aria-pressed="false">车尾</button></div><p class="showcase-note">挑选车手，查看车身与头盔细节</p></section>
     <section id="garage" class="garage menu-only team-garage" aria-label="车队与车手设置">
-      <div class="garage-header"><div class="panel-heading"><span class="eyebrow">YOUR PADDOCK</span><span class="version">围场车库 / 11</span></div>
-      <h2>准备你的发车阵容。</h2><p class="muted">11 支车队 · 22 位车手</p><div class="race-mode-setting"><label for="race-mode">比赛模式</label><select id="race-mode" aria-label="比赛模式"><option value="time-trial">单人计时挑战</option><option value="race">人机竞速 · 3 圈 · 5 AI</option></select><small id="race-mode-note">独自练习走线 · 挑战个人最佳</small></div><div class="camera-setting"><label for="camera-mode">驾驶视角</label><select id="camera-mode" aria-label="驾驶视角"><option value="close">近距</option><option value="standard" selected>标准</option><option value="far">远距</option></select><span>C / R3</span></div></div>
+      <div class="garage-header"><div class="panel-heading"><span class="eyebrow">YOUR PADDOCK</span><span class="version">围场车库 / 12</span></div>
+      <h2>准备你的发车阵容。</h2><p class="muted">11 支车队 · 22 位车手</p><div class="race-mode-setting"><label for="race-mode">比赛模式</label><select id="race-mode" aria-label="比赛模式"><option value="time-trial">单人计时挑战</option><option value="race">人机竞速 · 3 圈 · 5 AI</option></select><small id="race-mode-note">独自练习走线 · 挑战个人最佳</small></div><div class="camera-setting circuit-setting"><label id="circuit-select-label" for="circuit">赛道</label><select id="circuit" aria-label="赛道选择"><option value="monza">蒙扎 · 意大利</option><option value="spa">斯帕 · 比利时</option></select></div><div class="camera-setting"><label for="camera-mode">驾驶视角</label><select id="camera-mode" aria-label="驾驶视角"><option value="close">近距</option><option value="standard" selected>标准</option><option value="far">远距</option></select><span>C / R3</span></div></div>
       <div class="garage-scroll">
         <div class="team-grid-heading"><label class="field-title" for="team-select"><span>01</span> 选择车队</label><div class="team-select-wrap"><select id="team-select" aria-label="选择车队">${teams.map(team=>`<option value="${team.id}">${team.label} · ${team.name}</option>`).join('')}</select></div></div>
         <div class="team-grid" id="team-grid" role="group" aria-label="车队阵容">${teams.map(team=>`<button class="team-card" data-team="${team.id}" aria-pressed="false" style="--team-color:${team.color}"><span class="team-code">${teamCodes[team.id]}</span><span class="team-card-name">${team.label}</span><span class="team-check" aria-hidden="true">✓</span></button>`).join('')}</div>
@@ -63,14 +65,14 @@ export class UI {
         <p class="reference-note">用户提供的风格化模型 · 年份未标注</p>
         <details class="controller-help"><summary>手柄与驾驶操作</summary><p>连接手柄后，请先按任意按钮唤醒</p><p>左摇杆转向 · RT 油门 · LT 制动 · X / □ DRS · Y / △ 重置 · Menu 暂停 · R3 视角</p><p>围场：← / → 选车队，↑ / ↓ 选车手，A / × 出发；暂停时 A / × 继续、B / ○ 返回车库。</p></details>
       </div>
-      <div class="garage-launch"><div class="personal-best"><span>个人最佳 <small>MONZA</small></span><strong id="menu-best">—:——.———</strong></div>
+      <div class="garage-launch"><div class="personal-best"><span>个人最佳 <small data-circuit-code>MONZA</small></span><strong id="menu-best">—:——.———</strong></div>
       <div class="garage-status-row"><p id="model-status" class="model-status" data-status="loading" role="status" aria-live="polite">正在加载赛车与头盔…</p><p id="gamepad-status" class="gamepad-status" role="status"></p></div>
       <button id="start" class="primary-button" disabled>驶入赛道 <span>↗</span></button><p class="start-note">弯前制动 · 稳住弯心 · 回正加速</p></div>
     </section>
-    <div class="world-caption menu-only"><span class="caption-dot"></span> MONZA <span>小比例，大热爱。</span></div>
+    <div class="world-caption menu-only"><span class="caption-dot"></span><b data-circuit-code>MONZA</b> <span>小比例，大热爱。</span></div>
     <div class="race-hud race-only"><div class="lap-block"><span class="hud-label">LAP / 圈数</span><strong id="lap">01</strong><small id="sector">检查点 1 / 24</small></div><div class="time-block"><span class="hud-label">当前圈时间</span><strong id="current-time">0:00.000</strong><small id="validity">寻找你的节奏</small></div><div class="best-block"><span class="hud-label">个人最佳</span><strong id="best-time">—:——.———</strong><small id="last-time">上一圈 —</small></div></div>
     <div class="race-actions race-only"><button id="reset" class="glass-button" title="R 重置赛车">↺ <span>回到赛道</span><kbd>R</kbd></button><button id="pause" class="glass-button" title="Esc 暂停">Ⅱ <span>暂停</span><kbd>ESC</kbd></button><button id="camera-cycle" class="glass-button" type="button" title="C 切换视角">◉ <span id="camera-label">标准视角</span><kbd>C</kbd></button></div>
-    <div class="map-card race-only"><div><span>MONZA</span><small id="corner-name">起终点直道</small></div><span id="race-driver" class="race-driver">#16 勒克莱尔 · 法拉利</span><canvas id="minimap" width="360" height="290" aria-label="赛道地图与赛车位置"></canvas><span class="map-note"><b></b> 你的位置 <span>● 下一检查点</span></span></div>
+    <div class="map-card race-only"><div><span data-circuit-code>MONZA</span><small id="corner-name">起终点直道</small></div><span id="race-driver" class="race-driver">#16 勒克莱尔 · 法拉利</span><canvas id="minimap" width="360" height="290" aria-label="赛道地图与赛车位置"></canvas><span class="map-note"><b></b> 你的位置 <span>● 下一检查点</span></span></div>
     <div class="telemetry race-only"><span id="surface">● 沥青路面</span><div class="speed"><strong id="speed">0</strong><span>KM/H</span><b id="gear">N</b></div><div class="engine-readout"><span id="rpm-value">3,300 RPM</span><small id="shift-state"></small></div><div class="rev-bar"><i id="rev-fill"></i></div><div class="pedals"><span id="throttle-led">油门</span><span id="brake-led">制动</span><span>抓地有限</span></div><div id="grip-meter" class="grip-meter"><span>轮胎负荷</span><div><i id="grip-fill"></i></div><b id="grip-label">充足</b></div></div>
     <div class="drs-card race-only"><button id="drs-toggle" type="button" aria-label="切换 DRS 后翼" aria-pressed="false" disabled><span class="drs-wordmark">DRS <i aria-hidden="true">↗</i></span><kbd>F</kbd></button><div class="drs-copy"><strong id="drs-status" role="status">等待开放区</strong><span id="drs-zone"></span></div></div>
     <div id="driving-hint" class="driving-hint race-only" role="status">入弯前制动，出弯后加速</div>
@@ -121,7 +123,7 @@ export class UI {
     const qualityLabel=this.root.querySelector('.quality-control')!;
     for(const node of [...qualityLabel.childNodes])if(node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()==='画质'){const label=document.createElement('b');label.className='setting-label';label.textContent='画质';node.replaceWith(label);}
     this.root.querySelector('.garage .muted')!.insertAdjacentHTML('afterend','<div class="weather-summary"><span id="weather-condition"></span><small>切换天气重新计时 · 晴雨成绩分开保存</small></div>');
-    const bestLabel=this.root.querySelector('.personal-best>span')!;bestLabel.innerHTML='<span id="menu-best-label"></span><small>MONZA</small>';
+    const bestLabel=this.root.querySelector('.personal-best>span')!;bestLabel.innerHTML='<span id="menu-best-label"></span><small data-circuit-code>MONZA</small>';
     this.root.querySelector('.best-block .hud-label')!.id='best-label';
     this.root.querySelector('.pedals')!.insertAdjacentHTML('afterend','<div class="pedal-pressure"><div><span>油门开度</span><div class="pressure-track"><i id="throttle-pressure-fill"></i></div><b id="throttle-pressure-value">0%</b></div><div><span>制动压力</span><div class="pressure-track"><i id="brake-pressure-fill"></i></div><b id="brake-pressure-value">0%</b></div></div>');
     const keys=new Map(Object.entries(translations.zh).filter(([,value])=>!value.includes('{')).map(([key,value])=>[value,key as TranslationKey]));
@@ -146,7 +148,7 @@ export class UI {
     this.setTeam(this.selectedTeam,this.selectedDriver);this.setWeather(this.weather);this.setSound(this.soundEnabled);this.setModelStatus(this.modelState);
     this.setDrs(this.drs);this.setGamepad(this.gamepad);
     if(this.context)this.update(this.context.race,this.context.vehicle,this.context.track);
-    this.setCompetition(this.competition);
+    this.setCompetition(this.competition);this.setCircuit(this.circuitId);
     if(this.toastEntry)this.text('toast',this.t(this.toastEntry.key,this.localizedParams(this.toastEntry.params)));
     document.dispatchEvent(new CustomEvent('paddock-language',{detail:{language}}));
   }
@@ -202,11 +204,26 @@ export class UI {
   hideDiagnostics(){this.el('diagnostics-modal').hidden=true;this.el('diagnostics').focus();}
   setGamepad(status:{connected:boolean;name:string;supported:boolean}){this.gamepad={...status};const key=!status.supported?(status.connected?'gamepad.unsupported':'gamepad.unavailable'):status.connected?'gamepad.connected':'gamepad.disconnected';this.text('gamepad-status',this.t(key,{name:status.name}));this.el('gamepad-status').dataset.connected=String(status.connected&&status.supported);this.el('gamepad-status').title=status.connected?status.name:this.t('gamepad.waiting');}
   /** Call after update() so the race classification replaces the TT HUD labels. */
+  setCircuit(id:CircuitId){
+    this.circuitId=id;document.body.dataset.circuit=id;
+    const c=CIRCUITS[id],spa=id==='spa',zh=this.language==='zh';
+    this.el<HTMLSelectElement>('circuit').value=id;
+    this.text('circuit-select-label',zh?'赛道':'Circuit');
+    this.el('circuit').setAttribute('aria-label',zh?'赛道选择':'Circuit selection');
+    this.el('circuit').querySelectorAll('option').forEach(option=>{const item=CIRCUITS[option.value as CircuitId];option.textContent=zh?`${item.zh} · ${item.countryZh}`:item.name;});
+    this.text('circuit-title',`${spa?'SPA-FRANCORCHAMPS':'MONZA'}, ${c.country}`);
+    this.root.querySelectorAll('[data-circuit-code]').forEach(el=>{el.textContent=spa?'SPA':'MONZA';});
+    this.text('circuit-kicker',spa?'THE ARDENNES CHALLENGE':'THE TEMPLE OF SPEED');
+    this.root.querySelector('.track-pill strong')!.textContent=zh?c.zh:c.name;
+    this.root.querySelector('.track-pill>span:nth-of-type(2)')!.textContent=zh?`${c.countryZh} · ${spa?'起伏山地赛道':'艺术化短赛道'}`:spa?'Belgium · Hills and forest':'Italy · Miniature circuit';
+    const copy=this.root.querySelector('.menu-copy>p')!;copy.textContent=zh?`选一支车队，找到你的节奏。在${c.zh}，把每一个弯变成优势。`:`Choose your team. Find your rhythm. Make every corner count at ${c.name}.`;
+    document.title=zh?'Pocket Paddock · 口袋围场':`Pocket Paddock · ${c.name} ${this.competition.enabled?'Race':'Time Trial'}`;
+  }
   setCompetition(info:CompetitionDisplay){
     this.competition={...info,rows:info.rows.slice(0,6)};
     const enabled=info.enabled;
     document.body.dataset.competition=String(enabled);
-    document.title=this.language==='zh'?'Pocket Paddock · 口袋围场':enabled?'Pocket Paddock · Monza Race':'Pocket Paddock · Monza Time Trial';
+    document.title=this.language==='zh'?'Pocket Paddock · 口袋围场':enabled?`Pocket Paddock · ${CIRCUITS[this.circuitId].name} Race`:`Pocket Paddock · ${CIRCUITS[this.circuitId].name} Time Trial`;
     const mode=this.el<HTMLSelectElement>('race-mode');
     mode.value=enabled?'race':'time-trial';
     mode.querySelectorAll('option').forEach(option=>option.textContent=this.t(option.value==='race'?'race.mode.ai':'race.mode.tt'));

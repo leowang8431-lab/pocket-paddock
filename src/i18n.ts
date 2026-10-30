@@ -21,7 +21,7 @@ const zh={
   'hero.small':'下一圈，','hero.large':'由你领跑。','hero.line1':'选一支车队，找到你的节奏。',
   'hero.line2':'在蒙扎，把每一个弯变成优势。',
   'track.name':'蒙扎','track.location':'意大利 · 艺术化短赛道','caption':'小比例，大热爱。',
-  'garage.aria':'车队与车手设置','garage.version':'围场车库 / 11','garage.title':'准备你的发车阵容。',
+  'garage.aria':'车队与车手设置','garage.version':'围场车库 / 12','garage.title':'准备你的发车阵容。',
   'garage.subtitle':'11 支车队 · 22 位车手','garage.team':'选择车队','garage.driver':'选择车手',
   'race.mode':'比赛模式','race.mode.tt':'单人计时挑战','race.mode.ai':'人机竞速 · 3 圈 · 5 AI',
   'race.note.tt':'独自练习走线 · 挑战个人最佳','race.note.ai':'六车同场 · 三圈决胜 · 竞速圈速不计入计时榜',
@@ -92,7 +92,7 @@ const en:Record<TranslationKey,string>={
   'hero.small':'Your next lap.','hero.large':'Your own line.','hero.line1':'Choose your team. Find your rhythm.',
   'hero.line2':'Turn every corner into your advantage.',
   'track.name':'Monza','track.location':'Italy · Miniature circuit','caption':'Small scale. Full heart.',
-  'garage.aria':'Team and driver settings','garage.version':'PADDOCK GARAGE / 11','garage.title':'Prepare your starting grid.',
+  'garage.aria':'Team and driver settings','garage.version':'PADDOCK GARAGE / 12','garage.title':'Prepare your starting grid.',
   'garage.subtitle':'11 teams · 22 drivers','garage.team':'Choose your team','garage.driver':'Choose your driver',
   'race.mode':'Race mode','race.mode.tt':'Solo time trial','race.mode.ai':'Race AI · 3 laps · 5 rivals',
   'race.note.tt':'Practise your line · Chase your personal best','race.note.ai':'Six cars · Three laps · Race laps stay off the time-trial board',
@@ -148,6 +148,8 @@ export function t(language:Language,key:TranslationKey,params:TranslationParams=
 }
 export function localizedCorner(name:string,language:Language):string{
   const value=name.toLowerCase();
+  const spaNames=['la source','eau rouge','raidillon','kemmel','les combes','malmedy','bruxelles','no name','pouhon','fagnes','stavelot','paul frère','blanchimont','bus stop'];
+  if(spaNames.some(corner=>value.startsWith(corner)))return language==='zh'?name:name.split('·')[0].trim();
   const key:TranslationKey=value.includes('rettifilo')?'corner.rettifilo':value.includes('biassono')?'corner.biassono':value.includes('roggia')?'corner.roggia':value.includes('lesmo 1')?'corner.lesmo1':value.includes('lesmo 2')?'corner.lesmo2':value.includes('serraglio')?'corner.serraglio':value.includes('ascari')?'corner.ascari':value.includes('alboreto')||value.includes('parabolica')?'corner.alboreto':'corner.start';
   return t(language,key);
 }

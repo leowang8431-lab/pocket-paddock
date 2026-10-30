@@ -3,6 +3,8 @@ import type {RaceState} from './race';
 
 export const MONZA_DRS_REFERENCE='https://www.fia.com/system/files/decision-document/2025_italian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exit_map_quarantine_zone_and_red_zones.pdf';
 export const MONZA_REAL_LENGTH=5793;
+export const SPA_REAL_LENGTH=7004;
+export const SPA_DRS_REFERENCE='https://www.fia.com/system/files/decision-document/2025_belgian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exits_quarantine_zone_and_red_zones.pdf';
 export interface DrsZone {id:1|2;name:string;detection:number;start:number;end:number;sourceYear:2025}
 interface DrsTrack {length:number;width:number;corners:{name:string;distance:number}[];nearest(x:number,z:number):{distance:number}}
 export function wrapDistance(distance:number,length:number){return((distance%length)+length)%length;}
@@ -24,6 +26,19 @@ export function createMonzaDrsZones(track:DrsTrack):DrsZone[]{
     {id:2,name:'Rettifilo',detection:wrapDistance(turn11Exit+20*scale,track.length),start:12*scale,end:track.nearest(-85,-118).distance-3,sourceYear:2025},
   ];
 }
+
+/** FIA 2025 Belgian GP: 240m before T2 / 305m after T4, and
+ * 160m before T18 / 30m after T19. Exit anchors follow the game centreline. */
+export function createSpaDrsZones(track:DrsTrack):DrsZone[]{
+  const scale=track.length/SPA_REAL_LENGTH;
+  const corner=(name:RegExp)=>{const c=track.corners.find(c=>name.test(c.name));if(!c)throw new Error(`Missing Spa corner: ${name}`);return c.distance;};
+  const eau=corner(/Eau Rouge/i),crest=corner(/Raidillon/i),combes=corner(/Les Combes/i),source=corner(/La Source/i),busStop=corner(/Bus Stop/i);
+  const turn19Exit=busStop+55*scale;
+  return[
+    {id:1,name:'Kemmel',detection:wrapDistance(eau-240*scale,track.length),start:wrapDistance(crest+305*scale,track.length),end:wrapDistance(combes-110*scale,track.length),sourceYear:2025},
+    {id:2,name:'Pit Straight',detection:wrapDistance(busStop-160*scale,track.length),start:wrapDistance(turn19Exit+30*scale,track.length),end:wrapDistance(source-65*scale,track.length),sourceYear:2025},
+  ];
+}
 export type DrsState='outside'|'ready'|'active'|'wet'|'slow'|'braking'|'offtrack'|'closed';
 export interface DrsSummary {state:DrsState;zone:number|null;distanceToZone:number;active:boolean;available:boolean}
 export interface DrsContext {state:RaceState;weather:WeatherMode;distance:number;speed:number;brake:number;onRoad:boolean;pitLane:boolean;forward:number;collision:number}
@@ -33,7 +48,7 @@ export interface DrsContext {state:RaceState;weather:WeatherMode;distance:number
 export class DrsController {
   private requested=false;
   private current:DrsSummary={state:'closed',zone:null,distanceToZone:0,active:false,available:false};
-  constructor(readonly zones:readonly DrsZone[],readonly length:number){}
+  constructor(readonly zones:readonly DrsZone[],readonly length:number,readonly realLength=MONZA_REAL_LENGTH){}
   get summary():DrsSummary{return{...this.current};}
   reset(){this.requested=false;this.current={...this.current,active:false,available:false,state:'closed'};}
   toggle():boolean{
@@ -54,7 +69,7 @@ export class DrsController {
     const available=state==='ready';
     if(!available)this.requested=false;
     const active=available&&this.requested;
-    this.current={state:active?'active':state,zone:zone?.id??null,distanceToZone:zone?0:Math.round(next*MONZA_REAL_LENGTH/this.length),active,available};
+    this.current={state:active?'active':state,zone:zone?.id??null,distanceToZone:zone?0:Math.round(next*this.realLength/this.length),active,available};
     return this.summary;
   }
 }

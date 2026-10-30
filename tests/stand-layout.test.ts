@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Track} from '../src/track.ts';
-import {createStandLayouts,createBrakingBoards,distanceToStand,distanceToBounds,standCollider,standLocalBounds,standFootprint} from '../src/stand-layout.ts';
+import {createStandLayouts,createBrakingBoards,distanceToStand,distanceToBounds,standCollider,standLocalBounds,standFootprint,standsSeparated} from '../src/stand-layout.ts';
 
 const track=new Track();
 const stands=createStandLayouts(track);
 
 test('every spectator front faces the intended road, including the three straight stands',()=>{
-  assert.equal(stands.length,7);
+  assert.equal(stands.length,21);
+  assert.deepEqual(stands.slice(0,7).map(s=>s.id),['centrale','straight-north','straight-south','rettifilo','roggia','ascari','alboreto']);
+  assert.equal(new Set(stands.map(s=>s.id)).size,21);
   for(const stand of stands){
     const dx=stand.target.x-stand.x,dz=stand.target.z-stand.z;
     const dot=(-Math.sin(stand.yaw)*dx-Math.cos(stand.yaw)*dz)/Math.hypot(dx,dz);
@@ -87,4 +89,22 @@ test('150/100/50 braking references precede corner entry at the HUD distance sca
       assert.ok(Math.hypot(x-near.point.x,z-near.point.z)>11.8,`${board.id} enters the curb`);
     }
   }
+});
+
+
+test('all twenty-one complete stand footprints remain mutually separated and on the diorama base',()=>{
+  for(let i=0;i<stands.length;i++){
+    for(const point of standFootprint(stands[i]))assert.ok(point.x>=-337&&point.x<=467&&point.z>=-486&&point.z<=358,`${stands[i].id} leaves the park base`);
+    for(let j=0;j<i;j++)assert.ok(standsSeparated(stands[i],stands[j],4),`${stands[i].id} touches ${stands[j].id}`);
+  }
+});
+
+test('the original seven stands retain their exact 0.10 anchors and facing directions',()=>{
+  const expected=[
+    ['centrale',-125,34.91854606657635],['straight-north',-125,-96.13655416151519],
+    ['straight-south',-124.90478815465998,162.147860907199],['rettifilo',-104.8850794239641,-193.4031673797211],
+    ['roggia',143.31793768236457,-390.07445329280046],['ascari',129.90652277325125,23.204791362227333],
+    ['alboreto',-59.87677607383702,273.0161155961579],
+  ] as const;
+  for(const [id,x,z]of expected){const actual=stands.find(s=>s.id===id)!;assert.ok(Math.abs(actual.x-x)<1e-8&&Math.abs(actual.z-z)<1e-8,`${id} was moved by expansion`);}
 });

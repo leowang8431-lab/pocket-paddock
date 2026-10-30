@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {FleetCar,type FleetRenderPose} from './fleet-car';
 import type {AiRival} from './ai-race';
 import {getDriver,type DriverId,type TeamId} from './team-catalog';
+import {roadPose,type ElevationTrack} from './road-pose';
 
 type State='unloaded'|'loading'|'ready'|'fallback'|'failed';
 type TintMaterial=THREE.Material&{color?:THREE.Color;map?:THREE.Texture|null;vertexColors?:boolean};
@@ -22,6 +23,8 @@ const tint=(material:THREE.Material)=>(material as TintMaterial).color?.clone()?
  * numbers/wordmarks have per-driver canvases; no substitute low-poly chassis. */
 export class AiRivals {
   readonly group=new THREE.Group();
+  private ground?:ElevationTrack;
+  setGround(track?:ElevationTrack){this.ground=track;}
   private state:State='unloaded';
   private template?:FleetCar;
   private pending?:Promise<void>;
@@ -153,7 +156,8 @@ export class AiRivals {
         pose.helmetPitch=Math.sin(pose.elapsed*8)*Math.min(Math.abs(rival.speed)/4000,.012);
       }
       pose.distance=rival.distance;this.template.setRenderPose(pose);this.template.group.updateMatrixWorld(true);
-      this.object.position.set(rival.x,.11,rival.z);this.object.rotation.set(0,rival.heading,0);this.object.scale.setScalar(1);this.object.updateMatrix();
+      const ground=roadPose(this.ground,rival.x,rival.z,rival.heading);
+      this.object.position.set(rival.x,ground.height,rival.z);this.object.rotation.set(ground.pitch,rival.heading,0,'YXZ');this.object.scale.setScalar(1);this.object.updateMatrix();
       for(const batch of this.batches){
         this.matrix.multiplyMatrices(this.object.matrix,batch.source.matrixWorld);batch.mesh.setMatrixAt(count,this.matrix);
         batch.mesh.setColorAt(count,batch.section?appearance.wheelColors[batch.section]:appearance.colors[batch.sourceIndex]);

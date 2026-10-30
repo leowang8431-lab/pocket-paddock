@@ -17,7 +17,7 @@ try{
 }
 root.updateMatrixWorld(true);
 
-test('the taller stands double visible spectator capacity with two draws at either LOD and clear aisles',()=>{
+test('twenty-one taller stands retain two crowd draws per LOD and clear aisles',()=>{
   let total=0;
   for(const layout of layouts){
     assert.equal(layout.rows,layout.id==='centrale'?12:10);
@@ -25,7 +25,7 @@ test('the taller stands double visible spectator capacity with two draws at eith
     const crowd=group.getObjectByName('spectator-lod') as THREE.LOD;
     assert.equal(crowd.levels.length,3);assert.equal(crowd.levels[2].object.children.length,0);
     const count=crowd.userData.spectators;total+=count;
-    assert.equal(group.userData.spectators,count);assert.ok(count>250);
+    assert.equal(group.userData.spectators,count);assert.ok(count>=218);
     for(const level of crowd.levels.slice(0,2)){
       assert.equal(level.object.children.length,2,'more rows must not multiply crowd draw calls');
       for(const child of level.object.children){
@@ -41,9 +41,9 @@ test('the taller stands double visible spectator capacity with two draws at eith
       }
     }
   }
-  // v0.9's actual roster had 1,270 seats occupied. Keep a user-visible doubling
-  // while retaining the intentionally unoccupied gaps and access aisles.
-  assert.ok(total>=1270*1.99&&total<=2700,`spectators=${total}`);
+  // The original seven taller stands had 2,547 seated spectators. The 14
+  // additional park stands preserve gaps and total 6,184 occupied places.
+  assert.equal(layouts.length,21);assert.equal(total,6184);
 });
 
 test('every generated stand, seat, head, truss and railing fits its full audited footprint',()=>{

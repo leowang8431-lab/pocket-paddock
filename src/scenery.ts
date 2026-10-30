@@ -228,7 +228,9 @@ export function createScenery(track:Track):THREE.Group {
   }
   // Keep the established deterministic park. Only trees whose crowns would
   // enter a service bay or the enlarged grandstands move to a nearby clear spot.
-  let relocated=0,relocatedForStands=0,relocatedForServices=0;
+  let relocated=0,relocatedForStands=0,relocatedForServices=0,resampledForFacilities=0;
+  let relocationSeed=791906;
+  const relocationRandom=()=>{relocationSeed=(Math.imul(relocationSeed,1664525)+1013904223)>>>0;return relocationSeed/4294967296;};
   const standTreeExclusion=(x:number,z:number)=>standLayouts.some(stand=>distanceToStand(x,z,stand)<7);
   const treeClear=(x:number,z:number)=>{
     const near=track.nearest(x,z);
@@ -242,13 +244,25 @@ export function createScenery(track:Track):THREE.Group {
     const standConflict=standTreeExclusion(location.x,location.z),serviceConflict=tracksideTreeExclusion(location.x,location.z,tracksideSafety);
     if(!standConflict&&!serviceConflict)continue;
     let moved=false;
-    for(const radius of [10,16,24,32,45])for(let i=0;i<16;i++){
+    for(const radius of [10,16,24,32,45,64,90,128])for(let i=0;i<16;i++){
       if(moved)continue;const angle=i*Math.PI/8,x=location.x+Math.cos(angle)*radius,z=location.z+Math.sin(angle)*radius;
       if(x>=-213&&x<=337&&z>=-410&&z<=325&&treeClear(x,z)){location.x=x;location.z=z;moved=true;relocated++;if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;}
     }
+    // With twenty-one stands a few trees cannot find a local gap. A separate
+    // seeded resample keeps all 620 crowns, all four silhouettes and every
+    // facility exclusion without moving unrelated original trees.
+    if(!moved)for(let attempt=0;attempt<4000;attempt++){
+      const x=-213+relocationRandom()*550,z=-410+relocationRandom()*735;
+      if(treeClear(x,z)){
+        location.x=x;location.z=z;moved=true;relocated++;resampledForFacilities++;
+        if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;break;
+      }
+    }
     if(!moved)throw new Error('Cannot safely relocate a facility tree');
   }
-  addMonzaForest(root,locations);Object.assign(root.userData.forest,{relocatedForFacilities:relocated,relocatedForStands,relocatedForServices});
+  addMonzaForest(root,locations);Object.assign(root.userData.forest,{relocatedForFacilities:relocated,relocatedForStands,relocatedForServices,resampledForFacilities,
+    facilityClearance:7,locations:locations.map(({x,z,s})=>({x,z,s}))});
+  root.userData.grandstands={count:standLayouts.length,spectators:root.children.filter(g=>g.name.startsWith('grandstand-')).reduce((sum,g)=>sum+g.userData.spectators,0),crowdDrawsPerVisibleStand:2,artistic:'Twenty-one authored Monza park stands. The original seven anchors are preserved; fourteen added stands are not claims of actual venue positions.'};
   batchStaticScenery(root);
   // These objects never move. Crowd/tree LOD still changes visibility, while
   // static world matrices and scenery shadow draws need no per-frame updates.

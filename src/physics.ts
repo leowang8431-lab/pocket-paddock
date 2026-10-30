@@ -4,6 +4,9 @@ export type Surface = 'asphalt' | 'grass' | 'gravel';
 export interface Controls { throttle: boolean; brake: boolean; left: boolean; right: boolean; throttleAmount?:number; brakeAmount?:number; steerAmount?:number }
 export interface PhysicsTrack {
   width: number;
+  gradeAt?:(distance:number)=>number;
+  gradeAlongHeadingAt?:(x:number,z:number,heading:number)=>number;
+  barrierOffset?:number;
   colliders?: readonly {minX:number;maxX:number;minZ:number;maxZ:number}[];
   nearest(x: number, z: number): {point: {x:number;z:number}; tangent: {x:number;z:number}; distance:number};
   surfaceAt(x:number,z:number): Surface;
@@ -50,7 +53,13 @@ export class VehiclePhysics {
     const brakeAcceleration=this.brakePressure*weather.braking*(this.speed>.12?32.5:reverse?7:0);
     const drag=Math.sign(this.speed)*(drs?.55:1.9)*Math.pow(Math.abs(this.speed)/40,2);
     const previousSpeed=this.speed;
-    this.speed+=(engineAcceleration-brakeAcceleration-drag)*dt;
+    // Gravity acts only along the actual 3D road grade. The flat fast path is
+    // numerically identical to the existing Monza handling. Brakes hold a car
+    // parked on a slope; no artificial jump or teleport is introduced.
+    let slopeForce=0;
+    if(track.gradeAlongHeadingAt){const grade=track.gradeAlongHeadingAt(this.x,this.z,this.heading);slopeForce=5.886*grade/Math.sqrt(1+grade*grade);}
+    else if(track.gradeAt){const near=track.nearest(this.x,this.z),grade=track.gradeAt(near.distance),aligned=Math.sin(this.heading)*near.tangent.x+Math.cos(this.heading)*near.tangent.z;slopeForce=5.886*grade/Math.sqrt(1+grade*grade)*aligned;}
+    this.speed+=(engineAcceleration-brakeAcceleration-drag-slopeForce)*dt;
     if(previousSpeed>0&&this.speed<0&&this.brakePressure>0)this.speed=0;
     if(this.brakingFromForward&&this.speed<=.12)this.speed=0;
     if(throttleTarget===0&&brakeTarget===0)this.speed=damp(this.speed,0,this.surface==='asphalt'?.13:1.8,dt);
@@ -94,7 +103,7 @@ export class VehiclePhysics {
     const near=track.nearest(this.x,this.z), dx=this.x-near.point.x,dz=this.z-near.point.z;
     // Perimeter fences remain at their original 24-unit offset. Local road
     // narrowing adds runoff; it must not move the invisible collision wall.
-    const lateral=Math.hypot(dx,dz), boundary=track.width/2+16;
+    const lateral=Math.hypot(dx,dz), boundary=track.barrierOffset??track.width/2+16;
     if(lateral>boundary && this.surface!=='asphalt') {
       this.x=near.point.x+dx/lateral*(boundary-0.3); this.z=near.point.z+dz/lateral*(boundary-0.3);
       this.speed*=0.35; this.vx*=0.2;this.vz*=0.2; this.collision=1;

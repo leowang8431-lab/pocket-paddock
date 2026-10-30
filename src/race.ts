@@ -1,6 +1,7 @@
 import type {WeatherMode} from './conditions';
+import {circuitRecordKey,type CircuitId} from './circuits';
 export type RaceState='menu'|'countdown'|'racing'|'paused'|'finished';
-export interface RaceTrack {length:number;width:number;checkpoints:number[];widthAt?:(distance:number)=>number}
+export interface RaceTrack {id?:CircuitId;length:number;width:number;checkpoints:number[];widthAt?:(distance:number)=>number}
 export interface LapResult {time:number;valid:boolean;best:boolean}
 // Handling revisions have separate records; keep the old key untouched.
 export const BEST_STORAGE_KEY='pocket-paddock.monza.v3.best';
@@ -14,7 +15,7 @@ export class RaceSession {
   /** Opponent races keep lap validation but never update the time-trial board. */
   recordBests=true;
   private readonly weatherBests:Record<WeatherMode,number|null>={sunny:null,rainy:null};
-  get storageKey(){return this.weather==='rainy'?WET_BEST_STORAGE_KEY:BEST_STORAGE_KEY;}
+  get storageKey(){return circuitRecordKey(this.track.id??'monza',this.weather==='rainy');}
   constructor(public track:RaceTrack,private storage?:Pick<Storage,'getItem'|'setItem'>,weather:WeatherMode='sunny') {
     this.setWeather(weather);
   }

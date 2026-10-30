@@ -3,6 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createStandLayouts, standCollider } from './stand-layout';
 import {asphaltTexture,catchFenceMaterial} from './monza-details';
 import {createWidthZones,roadWidthAt,type WidthZone} from './track-width';
+import {createSpaDefinition,buildSpaTrack,isSpaGravel} from './spa-track';
+export type CircuitId='monza'|'spa';
 
 /** Scaled, widened Monza GP layout. Metres here are game units, not survey data. */
 export interface TrackSample {
@@ -20,7 +22,7 @@ interface SampleNode {
   left?:SampleNode; right?:SampleNode;
 }
 interface PitSegment {
-  x:number; z:number; dx:number; dz:number; lengthSquared:number;
+  x:number; y:number; z:number; dx:number; dy:number; dz:number; lengthSquared:number;
 }
 
 /** Immutable two-dimensional tree. Its box bound makes the lookup exact even
@@ -44,33 +46,31 @@ function squaredBoxDistance(x:number,z:number,node:SampleNode):number {
 
 export class Track {
   readonly group = new THREE.Group();
-  readonly width = 16;
+  readonly width:number;
+  readonly barrierOffset=24;
   readonly widthZones:readonly WidthZone[];
   readonly samples: TrackSample[] = [];
   readonly length: number;
   readonly checkpoints: number[];
   readonly corners: { name: string; distance: number }[];
   /** Solid ground-level structures, shared with the vehicle collision solver. */
-  readonly colliders: {minX:number;maxX:number;minZ:number;maxZ:number}[] = [
-    {minX:-74.3,maxX:-73.3,minZ:-75,maxZ:143},
-    {minX:-49.2,maxX:-30.8,minZ:-50.5,maxZ:114.5},
-  ];
+  readonly colliders: {minX:number;maxX:number;minZ:number;maxZ:number}[];
   private readonly curve: THREE.CatmullRomCurve3;
-  private readonly pitCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-85,0,181),new THREE.Vector3(-63,0,151),
-    new THREE.Vector3(-63,0,90),new THREE.Vector3(-63,0,0),
-    new THREE.Vector3(-63,0,-78),new THREE.Vector3(-85,0,-108),
-  ],false,'centripetal');
-  private readonly pitSamples = this.pitCurve.getPoints(180);
+  private readonly pitCurve: THREE.CatmullRomCurve3;
+  private readonly pitSamples:THREE.Vector3[];
+  private readonly pitBounds:{minX:number;maxX:number;minZ:number;maxZ:number};
   private readonly nearestTree:SampleNode;
   private lastX=NaN; private lastZ=NaN; private lastNearest?:TrackSample;
   private readonly pitCells=new Map<number,Map<number,PitSegment[]>>();
   private readonly pitCellSize=12;
+  private terrainGrid?:{minX:number;maxX:number;minZ:number;maxZ:number;nx:number;nz:number};
 
-  constructor() {
+  constructor(readonly id:CircuitId='monza') {
+    this.width=id==='spa'?11:16;
     // Start on the pit straight. Clockwise: Rettifilo R/L, Biassono R,
     // Roggia L/R, Lesmo R/R, Serraglio, Ascari L/R/L, Alboreto R.
-    const points = [
+    const spa=id==='spa'?createSpaDefinition():undefined;
+    const points = spa?.points??[
       [-85,100],[-85,45],[-85,-30],[-85,-100],[-85,-118],
       [-80,-141],[-62,-161],[-54,-184],[-50,-204],
       [-39,-218],[-12,-247],[25,-273],[67,-296],[109,-317],
@@ -82,7 +82,7 @@ export class Track {
       [-80,213],[-88,192],[-85,165],
     ].map(([x,z]) => new THREE.Vector3(x,0,z));
     this.curve = new THREE.CatmullRomCurve3(points,true,'centripetal',0.35);
-    this.curve.arcLengthDivisions = 6000;
+    this.curve.arcLengthDivisions = id==='spa'?300000:6000;
     this.length = this.curve.getLength();
     for (let i=0; i<1600; i++) {
       const t=i/1600;
@@ -91,9 +91,31 @@ export class Track {
         right:new THREE.Vector3(tangent.z,0,-tangent.x),distance:t*this.length,index:i,t});
     }
     this.nearestTree=sampleTree(this.samples,this.samples.map(s=>s.index));
+    this.pitCurve=id==='spa'?new THREE.CatmullRomCurve3([
+      this.sampleAt(this.nearest(spa!.corners.at(-1)!.x,spa!.corners.at(-1)!.z).distance-75).point,new THREE.Vector3(-155,-4.8,300),new THREE.Vector3(-155,-1.8,278),
+      new THREE.Vector3(-107,0,265),new THREE.Vector3(-107,0,200),
+      new THREE.Vector3(-107,0,110),new THREE.Vector3(-107,0,49),this.sampleAt(60).point,
+    ],false,'centripetal'):new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-85,0,181),new THREE.Vector3(-63,0,151),new THREE.Vector3(-63,0,90),
+      new THREE.Vector3(-63,0,0),new THREE.Vector3(-63,0,-78),new THREE.Vector3(-85,0,-108),
+    ],false,'centripetal');
+    this.pitSamples=this.pitCurve.getPoints(id==='spa'?252:180);
+    if(id==='spa'){
+      // The garages stand on one level slab. Restrict the height transitions to
+      // the entrance/exit ramps instead of allowing Catmull-Rom to overshoot
+      // between the otherwise level interior control points.
+      const entry=this.pitSamples[0].clone(),exit=this.pitSamples.at(-1)!.clone();
+      const smooth=(t:number)=>t*t*(3-2*t);
+      for(let i=0;i<this.pitSamples.length;i++){
+        const p=this.pitSamples[i],entryWeight=i<108?1-smooth(i/108):0,exitWeight=i>216?smooth((i-216)/36):0;
+        p.y=entry.y*entryWeight+exit.y*exitWeight;
+        if(i>=108)p.x=-107+(exit.x+107)*exitWeight;
+      }
+    }
+    const radius=Math.sqrt(36.5);this.pitBounds={minX:Math.min(...this.pitSamples.map(p=>p.x))-radius,maxX:Math.max(...this.pitSamples.map(p=>p.x))+radius,minZ:Math.min(...this.pitSamples.map(p=>p.z))-radius,maxZ:Math.max(...this.pitSamples.map(p=>p.z))+radius};
     this.indexPitSegments();
     this.checkpoints=Array.from({length:24},(_,i)=>i*this.length/24);
-    this.corners = [
+    this.corners = (spa?.corners??[
       {name:'Rettifilo · 第一减速弯',x:-66,z:-153},
       {name:'Biassono · 大弯',x:26,z:-273},
       {name:'Roggia · 第二减速弯',x:153,z:-347},
@@ -102,11 +124,12 @@ export class Track {
       {name:'Serraglio · 森林直道',x:143,z:-145},
       {name:'Ascari · 阿斯卡里',x:81,z:0},
       {name:'Alboreto · 抛物线弯',x:-59,z:221},
-    ].map(c=>({name:c.name,distance:this.nearest(c.x,c.z).distance}));
-    this.widthZones=createWidthZones(this.corners);
+    ]).map(c=>({name:c.name,distance:this.nearest(c.x,c.z).distance}));
+    this.widthZones=id==='spa'?[]:createWidthZones(this.corners);
     this.group.userData.widthZones=this.widthZones;
-    this.colliders.push(...createStandLayouts(this).map(standCollider));
-    this.build();
+    this.colliders=id==='spa'?[]:[{minX:-74.3,maxX:-73.3,minZ:-75,maxZ:143},{minX:-49.2,maxX:-30.8,minZ:-50.5,maxZ:114.5}];
+    if(id==='monza'){this.colliders.push(...createStandLayouts(this).map(standCollider));this.build();}
+    else buildSpaTrack(this,this.pitSamples);
     this.batchStaticGeometry();
   }
 
@@ -116,6 +139,74 @@ export class Track {
     const point=this.curve.getPointAt(t);
     const tangent=this.curve.getTangentAt(t).setY(0).normalize();
     return {point,tangent,right:new THREE.Vector3(tangent.z,0,-tangent.x),distance:d,t,index:Math.floor(t*this.samples.length)%this.samples.length};
+  }
+
+  /** Longitudinal slope (rise / horizontal run), with an exact flat Monza fast path. */
+  gradeAt(distance:number):number {
+    if(this.id==='monza')return 0;
+    const d=((distance%this.length)+this.length)%this.length,t=this.curve.getTangentAt(d/this.length);
+    return t.y/Math.max(1e-8,Math.hypot(t.x,t.z));
+  }
+
+  /** Continuous surface height uses the exact same sampled chords as the road.
+   * Pit-lane ramps use their own continuous 3D chords, not the nearest race lane. */
+  heightAt(x:number,z:number):number {
+    if(this.id==='monza')return 0;
+    if(this.isPitLane(x,z)){
+      let best=Infinity,height=0;
+      for(const s of this.pitCells.get(Math.floor(x/this.pitCellSize))?.get(Math.floor(z/this.pitCellSize))??[]){
+        const t=THREE.MathUtils.clamp(((x-s.x)*s.dx+(z-s.z)*s.dz)/s.lengthSquared,0,1),dx=x-s.x-s.dx*t,dz=z-s.z-s.dz*t,d=dx*dx+dz*dz;
+        if(d<best){best=d;height=s.y+s.dy*t;}
+      }return height;
+    }
+    const near=this.nearest(x,z);let best=Infinity,height=near.point.y;
+    for(let k=-2;k<=1;k++){
+      const a=this.samples[(near.index+k+this.samples.length)%this.samples.length].point,b=this.samples[(near.index+k+1+this.samples.length)%this.samples.length].point;
+      const dx=b.x-a.x,dz=b.z-a.z,t=THREE.MathUtils.clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1),d=(x-a.x-dx*t)**2+(z-a.z-dz*t)**2;
+      if(d<best){best=d;height=a.y+(b.y-a.y)*t;}
+    }return height;
+  }
+
+  /** Signed slope along the car's own forward axis, including pit ramps. */
+  gradeAlongHeadingAt(x:number,z:number,heading:number):number {
+    if(this.id==='monza')return 0;
+    if(this.isPitLane(x,z)){
+      let best=Infinity,result=0;
+      for(const s of this.pitCells.get(Math.floor(x/this.pitCellSize))?.get(Math.floor(z/this.pitCellSize))??[]){
+        const t=THREE.MathUtils.clamp(((x-s.x)*s.dx+(z-s.z)*s.dz)/s.lengthSquared,0,1),d=(x-s.x-s.dx*t)**2+(z-s.z-s.dz*t)**2;
+        if(d<best){best=d;result=s.dy/s.lengthSquared*(Math.sin(heading)*s.dx+Math.cos(heading)*s.dz);}
+      }return result;
+    }
+    const near=this.nearest(x,z);return this.gradeAt(near.distance)*(Math.sin(heading)*near.tangent.x+Math.cos(heading)*near.tangent.z);
+  }
+
+  /** A broad blended Ardennes ground field, pinned to the roadway at its edges. */
+  terrainHeightAt(x:number,z:number):number {
+    if(this.id==='monza')return 0;
+    const near=this.nearest(x,z),distance=Math.hypot(x-near.point.x,z-near.point.z),surface=this.heightAt(x,z);
+    if(distance<=28)return surface;
+    const closest:{distance:number;height:number}[]=[];
+    for(let i=0;i<this.samples.length;i+=16){const p=this.samples[i].point,d=(p.x-x)**2+(p.z-z)**2;closest.push({distance:d,height:p.y});}
+    closest.sort((a,b)=>a.distance-b.distance);let sum=0,weights=0;
+    for(const p of closest.slice(0,6)){const weight=1/(p.distance+1600);sum+=p.height*weight;weights+=weight;}
+    const t=THREE.MathUtils.clamp((distance-28)/70,0,1),blend=t*t*(3-2*t);
+    return THREE.MathUtils.lerp(surface,sum/weights,blend);
+  }
+
+  /** Actual rendered rolling-ground triangle height outside the road corridor.
+   * Scenery bases use this rather than the ideal smooth interpolation above. */
+  terrainMeshHeightAt(x:number,z:number):number {
+    if(this.id==='monza')return 0;
+    if(!this.terrainGrid){
+      const xs=this.samples.map(s=>s.point.x),zs=this.samples.map(s=>s.point.z),minX=Math.min(...xs)-220,maxX=Math.max(...xs)+220,minZ=Math.min(...zs)-200,maxZ=Math.max(...zs)+200;
+      this.terrainGrid={minX,maxX,minZ,maxZ,nx:Math.ceil((maxX-minX)/12),nz:Math.ceil((maxZ-minZ)/12)};
+    }
+    const {minX,maxX,minZ,maxZ,nx,nz}=this.terrainGrid;
+    const u=THREE.MathUtils.clamp((x-minX)/(maxX-minX)*nx,0,nx),v=THREE.MathUtils.clamp((z-minZ)/(maxZ-minZ)*nz,0,nz),ix=Math.min(nx-1,Math.floor(u)),iz=Math.min(nz-1,Math.floor(v)),tx=u-ix,tz=v-iz;
+    const height=(dx:number,dz:number)=>this.terrainHeightAt(minX+(maxX-minX)*(ix+dx)/nx,minZ+(maxZ-minZ)*(iz+dz)/nz)-1.5;
+    const h10=height(1,0),h01=height(0,1);
+    if(tx+tz<=1){const h00=height(0,0);return h00+(h10-h00)*tx+(h01-h00)*tz;}
+    const h11=height(1,1);return h11+(h01-h11)*(1-tx)+(h10-h11)*(1-tz);
   }
 
   nearest(x:number,z:number): TrackSample {
@@ -151,7 +242,7 @@ export class Track {
     const radius=Math.sqrt(36.5),size=this.pitCellSize;
     for(let i=0;i<this.pitSamples.length-1;i++){
       const a=this.pitSamples[i],b=this.pitSamples[i+1],dx=b.x-a.x,dz=b.z-a.z;
-      const segment:PitSegment={x:a.x,z:a.z,dx,dz,lengthSquared:dx*dx+dz*dz};
+      const segment:PitSegment={x:a.x,y:a.y,z:a.z,dx,dy:b.y-a.y,dz,lengthSquared:dx*dx+dz*dz};
       for(let gx=Math.floor((Math.min(a.x,b.x)-radius)/size);gx<=Math.floor((Math.max(a.x,b.x)+radius)/size);gx++){
         let column=this.pitCells.get(gx);if(!column){column=new Map();this.pitCells.set(gx,column);}
         for(let gz=Math.floor((Math.min(a.z,b.z)-radius)/size);gz<=Math.floor((Math.max(a.z,b.z)+radius)/size);gz++){
@@ -162,7 +253,8 @@ export class Track {
   }
 
   isPitLane(x:number,z:number):boolean {
-    if(x< -92||x> -54||z< -116||z>188)return false;
+    if(this.id==='monza'){if(x< -92||x> -54||z< -116||z>188)return false;}
+    else if(x<this.pitBounds.minX||x>this.pitBounds.maxX||z<this.pitBounds.minZ||z>this.pitBounds.maxZ)return false;
     const segments=this.pitCells.get(Math.floor(x/this.pitCellSize))?.get(Math.floor(z/this.pitCellSize));
     if(!segments)return false;
     for(const s of segments){
@@ -190,6 +282,7 @@ export class Track {
   }
 
   private isGravelSection(distance:number):boolean {
+    if(this.id==='spa')return isSpaGravel(distance,this.length);
     const t=distance/this.length;
     return (t>.14&&t<.22)||(t>.35&&t<.53)||(t>.64&&t<.71)||(t>.85&&t<.94);
   }

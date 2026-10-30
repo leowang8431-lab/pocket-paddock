@@ -45,6 +45,17 @@ export function standFootprint(stand:StandLayout):Point2[] {
   return [[b.minX,b.minZ],[b.maxX,b.minZ],[b.maxX,b.maxZ],[b.minX,b.maxZ]].map(([x,z])=>({x:stand.x+c*x+s*z,z:stand.z-s*x+c*z}));
 }
 
+/** Separating-axis check on the complete rotated roof/base footprint.
+ * A positive gap keeps independent stands apart, including their overhangs. */
+export function standsSeparated(a:StandLayout,b:StandLayout,gap=4):boolean {
+  const aa=standFootprint(a),bb=standFootprint(b);
+  for(const p of [a,b])for(const axis of [{x:Math.cos(p.yaw),z:-Math.sin(p.yaw)},{x:Math.sin(p.yaw),z:Math.cos(p.yaw)}]){
+    const pa=aa.map(v=>v.x*axis.x+v.z*axis.z),pb=bb.map(v=>v.x*axis.x+v.z*axis.z);
+    if(Math.min(...pb)-Math.max(...pa)>=gap||Math.min(...pa)-Math.max(...pb)>=gap)return true;
+  }
+  return false;
+}
+
 /** Ground collision uses the occupied base, not the raised roof. This
  * conservative world AABB is also checked against every track segment. */
 export function standCollider(stand:StandLayout):Bounds2 {
@@ -86,7 +97,7 @@ export function createStandLayouts(track:LayoutTrack):StandLayout[] {
     }
     return nearest/track.samples.length*track.length;
   };
-  const specs=[
+  const specs:{id:string;distance:number;offset:number;width:number;rows:number;covered:boolean;side?:number}[]=[
     {id:'centrale',distance:nearestDistance(-85,35),offset:40,width:106,rows:12,covered:true},
     {id:'straight-north',distance:nearestDistance(-85,-96),offset:40,width:62,rows:10,covered:false},
     {id:'straight-south',distance:nearestDistance(-85,164),offset:40,width:48,rows:10,covered:true},
@@ -97,18 +108,30 @@ export function createStandLayouts(track:LayoutTrack):StandLayout[] {
     // straight. Place it outside the whole Alboreto hairpin instead.
     {id:'alboreto',distance:track.corners[7].distance,offset:51,width:48,rows:10,covered:false},
   ];
+  // Fourteen authored park stands triple Monza's stand count. These anchors
+  // were screened against all complete pit, strategy-room, tower/stair,
+  // background-building, service-vehicle and venue-prop footprints. Avoid
+  // importing those builders here: they themselves consume this shared layout.
+  // Runtime road/pit and stand-to-stand audits remain independent of that screen.
+  const additions=[
+    [800,-1,54,44],[425,-1,54,44],[1150,1,90,44],[675,-1,54,44],
+    [900,-1,54,44],[350,1,54,44],[500,1,54,44],[1225,1,54,44],
+    [1425,1,90,44],[125,1,76,44],[725,1,46,44],[625,1,54,44],
+    [850,1,54,44],[950,1,54,36],
+  ];
+  additions.forEach(([distance,side,offset,width],i)=>specs.push({id:`expansion-${String(i+1).padStart(2,'0')}`,distance,side,offset,width,rows:10,covered:true}));
   const result:StandLayout[]=[];
   for(const spec of specs){
     const sample=track.sampleAt(spec.distance);
     let stand:StandLayout|undefined;
     for(let extra=0;extra<=100;extra+=2){
-      const offset=spec.offset+extra;
+      const offset=(spec.offset+extra)*(spec.side??1);
       const x=sample.point.x+sample.right.x*offset,z=sample.point.z+sample.right.z*offset;
       const candidate:StandLayout={id:spec.id,x,z,yaw:Math.atan2(x-sample.point.x,z-sample.point.z),width:spec.width,rows:spec.rows,covered:spec.covered,target:{x:sample.point.x,z:sample.point.z,distance:spec.distance},minTrackClearance:0,minColliderClearance:0};
       measureClearance(track,candidate);
       // Keep all visible geometry behind the guardrail (24 units from the
       // centre), plus a walkway; leave the collider well outside the road.
-      if(candidate.minTrackClearance>=29&&candidate.minColliderClearance>=27&&!pitConflict(track,candidate)){stand=candidate;break;}
+      if(candidate.minTrackClearance>=29&&candidate.minColliderClearance>=27&&!pitConflict(track,candidate)&&result.every(stand=>standsSeparated(candidate,stand,4))){stand=candidate;break;}
     }
     if(!stand)throw new Error(`Grandstand ${spec.id} has no safe placement`);
     result.push(stand);
