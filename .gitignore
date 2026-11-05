@@ -7,7 +7,7 @@ test-results/
 playwright-report/
 *.log
 
-# Hosting identity is local to each deployment.
+# Local hosting identity and environment credentials.
 .openai/
 .env
 .env.*

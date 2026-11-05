@@ -5,6 +5,8 @@ import type {StandLayout,Bounds2} from './stand-layout';
 import {addPitComplex,pitFootprint,type PitFootprint,type PitComplexLayout} from './pit-complex';
 import {batchStaticScenery,coloredGeometry} from './render-batches';
 import {structuralRod} from './monza-details';
+import {addSpaPitFacilities} from './spa-pit-facilities';
+import {SPA_PIT_LAYOUT} from './spa-pit-layout';
 
 const VENUE='https://www.spa-francorchamps.be/en/news/262_inauguration-of-the-new-infrastructure-of-the-circuit-of-spa-francorchamps';
 const BOXES='https://www.spa-francorchamps.be/en/evenement-locationdesalles';
@@ -160,14 +162,36 @@ export function addSpaGrandstand(parent:THREE.Group,track:SceneTrack,s:SpaStandL
   g.userData.fullBounds=b;g.userData.footings=footings;return g;
 }
 
-function transformedFootprint(p:PitFootprint):PitFootprint{return{...p,x:-170-p.x,z:200-p.z,yaw:p.yaw+Math.PI};}
+function transformedFootprint(p:PitFootprint):PitFootprint{return{...p,x:p.x,z:200-p.z,yaw:-p.yaw};}
+function unmirrorPitLabels(root:THREE.Group){
+  root.traverse(object=>{
+    if(!(object instanceof THREE.Mesh)||Array.isArray(object.material)||!('map'in object.material)||!object.material.map)return;
+    const geometry=object.geometry.clone(),uv=geometry.attributes.uv,index=geometry.index;if(!uv)return;
+    const parents=Array.from({length:uv.count},(_,i)=>i),find=(i:number):number=>parents[i]===i?i:parents[i]=find(parents[i]);
+    const count=index?.count??uv.count;
+    for(let i=0;i<count;i+=3){const a=index?index.getX(i):i,b=index?index.getX(i+1):i+1,c=index?index.getX(i+2):i+2;parents[find(b)]=find(a);parents[find(c)]=find(a);}
+    const ranges=new Map<number,{min:number;max:number}>();
+    for(let i=0;i<uv.count;i++){const id=find(i),u=uv.getX(i),r=ranges.get(id);if(r){r.min=Math.min(r.min,u);r.max=Math.max(r.max,u);}else ranges.set(id,{min:u,max:u});}
+    // Flip each connected sign/screen island in place. A whole-atlas flip
+    // would swap telemetry tiles or put a different team's image on a room.
+    for(let i=0;i<uv.count;i++){const r=ranges.get(find(i))!;uv.setX(i,r.min+r.max-uv.getX(i));}
+    uv.needsUpdate=true;geometry.userData.readableReflectedLabels=true;object.geometry=geometry;
+  });
+}
 function addSpaPaddock(parent:THREE.Group,track:SceneTrack){
   // Reuse complete team workstations and their authored people without copying
   // Monza's distinctive towers, Fans Club corner or oval-track scenery.
-  const templateTrack=new Track(),template=new THREE.Group(),source=addPitComplex(template,templateTrack),localRoot=new THREE.Group();
+  const templateTrack=new Track(),template=new THREE.Group(),source=addPitComplex(template,templateTrack,'spa-template'),localRoot=new THREE.Group();
   localRoot.name='spa-gp-pit-building';localRoot.scale.y=1.25;parent.add(localRoot);
   const keep=['pit-service-apron-equipment','pit-wall-original-height','pit-telemetry-screen-atlas','pit-garage-number-and-team-atlas','riolex-pit-entry-clock',...source.layout.strategyPods.map(p=>p.id)];
   for(const name of keep){const node=source.group.getObjectByName(name);if(node){node.removeFromParent();localRoot.add(node);}}
+  // Spa mirrors the shared paddock template. Its original Monza wall would
+  // run through the eleven strategy rooms and the RIOLEX bridge post. Move
+  // only this venue's wall towards the race lane, outside those solids.
+  const pitWall=localRoot.getObjectByName('pit-wall-original-height') as THREE.Group;
+  pitWall.position.x-=1.8;
+  pitWall.userData.clearance={worldCenterX:-75.6,strategyRoomGap:.65,clockPostGap:.29};
+  const details=addSpaPitFacilities(localRoot,parent);
   // Garage twelve is a neutral spare bay here; remove the Monza-only fallback
   // atlas row while retaining all eleven real team fascias.
   const headers=localRoot.getObjectByName('pit-garage-number-and-team-atlas') as THREE.Mesh;
@@ -183,7 +207,7 @@ function addSpaPaddock(parent:THREE.Group,track:SceneTrack){
       if(x< -70&&x> -75.5)indices.push(old[i],old[i+1],old[i+2]);}
     geo.setIndex(indices);geo.computeBoundingSphere();const mesh=new THREE.Mesh(geo,original.material);mesh.name='spa-strategy-room-team-atlas';localRoot.add(mesh);
   }
-  box(localRoot,-40,.22,32,18,.4,165,0xb4bbb3);box(localRoot,-31.4,3.8,32,.7,7.6,165,0xafb6b0);
+  box(localRoot,-40,-.22,32,18,.4,165,0xb4bbb3);box(localRoot,-31.4,3.8,32,.7,7.6,165,0xafb6b0);
   box(localRoot,-40,7.45,32,20,.65,167,0xd5d9d1);box(localRoot,-40,14.4,32,21,.55,168,0x9da8a6);
   for(let i=0;i<13;i++)box(localRoot,-49.25,3.7,-49.4+i*13.2,.55,7.4,.45,0xc8cfca);
   for(const z of [-50.4,114.5])box(localRoot,-40,7.3,z,18,14.6,.65,0xc8cec5);
@@ -198,26 +222,30 @@ function addSpaPaddock(parent:THREE.Group,track:SceneTrack){
   for(const x of [-74.5,-51.5])box(localRoot,x,4.3,124,.72,8.6,.9,0x2c644f);
   box(localRoot,-63,8.55,124,24,3.5,.85,0x215b48);
   const riolex=sign('RIOLEX',8.4,1.05,'#215b48');riolex.position.set(-69.5,8.7,124.48);localRoot.add(riolex);
+  unmirrorPitLabels(localRoot);
   const base=source.layout;
   const retained=[base.boxes,...base.props,...base.strategyPods,...base.clockBeam.posts];
   const boxes={...transformedFootprint(base.boxes),height:14.675*1.25};
   const layout:PitComplexLayout={...base,reference:BOXES,artistic:'Spa GP pit building proportions are authored for gameplay. Eleven complete team rooms and equipment reuse the shared paddock asset; Monza towers and Fans Club are not placed at Spa.',boxes,towers:[],stairs:[],clubs:[],props:base.props.map(transformedFootprint),strategyPods:base.strategyPods.map(p=>({...transformedFootprint(p),teamId:p.teamId,teamName:p.teamName})),clockBeam:{...transformedFootprint(base.clockBeam),brand:'RIOLEX',clearHeight:base.clockBeam.clearHeight,posts:base.clockBeam.posts.map(transformedFootprint)},footprints:retained.map(p=>p===base.boxes?boxes:transformedFootprint(p))};
   const colliders=[layout.boxes,...layout.strategyPods,...layout.clockBeam.posts].map(p=>{const c=Math.cos(p.yaw),s=Math.sin(p.yaw),ps=[[-p.width/2,-p.depth/2],[p.width/2,-p.depth/2],[p.width/2,p.depth/2],[-p.width/2,p.depth/2]].map(([x,z])=>({x:p.x+c*x+s*z,z:p.z-s*x+c*z}));return{minX:Math.min(...ps.map(v=>v.x)),maxX:Math.max(...ps.map(v=>v.x)),minZ:Math.min(...ps.map(v=>v.z)),maxZ:Math.max(...ps.map(v=>v.z))};});
-  localRoot.rotation.y=Math.PI;localRoot.position.set(-170,0,200);localRoot.userData.layout=layout;localRoot.userData.strategyDetails=source.group.userData.strategyDetails;
+  // Official pit timing coordinates place the F1 lane on the driver's right
+  // of the uphill straight. Reflect the complete local asset, retaining each
+  // team's longitudinal position and keeping all garage doors towards it.
+  localRoot.rotation.y=Math.PI;localRoot.scale.x=-1;localRoot.position.set(0,0,200);localRoot.userData.layout=layout;localRoot.userData.strategyDetails=source.group.userData.strategyDetails;
+  localRoot.userData.garageDetails={garages:details.garages.map(g=>({id:g.name,...g.userData})),parking:details.parking.filter(g=>g.userData.teamId).map(g=>({id:g.name,...g.userData})),removedLegacyPlates:details.removedLegacyPlates,removedLegacyPaint:details.removedLegacyPaint,equipmentRetreat:details.equipmentRetreat,shiftedTelemetryVertices:details.shiftedTelemetryVertices,frontage:details.frontage,groundOwner:details.groundOwner};
   const supports:{id:string;bottom:number;top:number}[]=[];
   for(const f of [layout.boxes,...layout.strategyPods]){
-    const bottom=Math.min(...pitFootprint(f,8).map(p=>ground(track,p.x,p.z)))-.35,top=f===layout.boxes?.5:0;
+    const bottom=Math.min(...pitFootprint(f,8).map(p=>ground(track,p.x,p.z)))-.35,top=f===layout.boxes?SPA_PIT_LAYOUT.serviceY-.03:0;
     box(parent,f.x,(bottom+top)/2,f.z,f.width,top-bottom,f.depth,0x8d9991);
     supports.push({id:f.id,bottom,top});
   }
   localRoot.userData.foundations=supports;
-  // One fixed slab provides the pit garages' apron; the driven pit road itself
-  // is part of Track and has continuous connections to the GP circuit.
-  const apronPoints=Array.from({length:17},(_,i)=>[ground(track,-139,73+i*190/16),ground(track,-113.15,73+i*190/16)]).flat(),apronBottom=Math.min(...apronPoints)-.35;
-  box(parent,-126.075,(apronBottom-.2)/2,168,25.85,-.2-apronBottom,190,0x8d9991);
-  box(parent,-126.075,-.10,168,25.85,.20,190,0x9baba2);
+  // Keep only the below-ground support. Track owns the adjacent gray working
+  // apron, teal divider and fast-lane surfaces, never a second visible slab.
+  const apronPoints=Array.from({length:17},(_,i)=>[ground(track,-31,73+i*190/16),ground(track,-56.85,73+i*190/16)]).flat(),apronBottom=Math.min(...apronPoints)-.35;
+  box(parent,-43.925,(apronBottom-.2)/2,168,25.85,-.2-apronBottom,190,0x8d9991);
   templateTrack.group.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry.dispose();});
-  return{layout,colliders,clock:source.clockController};
+  return{layout,colliders,clock:source.clockController,review:[...details.garages,...details.parking,...(details.equipment?[details.equipment]:[]),pitWall].map(object=>({object,parent:object.parent!}))};
 }
 
 function addSpaForest(root:THREE.Group,track:SceneTrack,stands:SpaStandLayout[],facilities:readonly PitFootprint[]){
@@ -265,6 +293,9 @@ export function createSpaScenery(track:SceneTrack):THREE.Group{
     const material=new THREE.MeshStandardMaterial({color:0x492f2c,emissive:0xee382e,emissiveIntensity:.05});
     const bulb=new THREE.Mesh(new THREE.SphereGeometry(.36,10,7),material);bulb.scale.z=.25;bulb.position.set(-89+i*2,8.5,92.66);bulb.name=`start-light-${i}`;gantry.add(bulb);
   }
-  batchStaticScenery(root,110);root.updateMatrixWorld(true);root.traverse(o=>{o.matrixAutoUpdate=false;o.matrixWorldAutoUpdate=false;if(o instanceof THREE.Mesh)o.castShadow=false;});
+  for(const {object}of pit.review)object.removeFromParent();
+  batchStaticScenery(root,110);
+  for(const {object,parent}of pit.review){batchStaticScenery(object,1000000);parent.add(object);}
+  root.updateMatrixWorld(true);root.traverse(o=>{o.matrixAutoUpdate=false;o.matrixWorldAutoUpdate=false;if(o instanceof THREE.Mesh)o.castShadow=false;});
   return root;
 }

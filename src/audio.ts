@@ -6,7 +6,7 @@ export type {PowertrainInput,PowertrainState} from './powertrain';
 
 /** Two rich mechanical cycle shapes extracted from a real licensed recording.
  * No noise buffer, air layer, random generator or audible sine oscillator.
- * Both preserve the recorded harmonic phases and blend with engine load. */
+ * Slow, inaudible controls gently vary combustion pitch and level at high RPM. */
 export class EngineVoice {
   readonly output:GainNode;
   private readonly bodies:OscillatorNode[]=[];
@@ -14,6 +14,10 @@ export class EngineVoice {
   private readonly highpass:BiquadFilterNode;
   private readonly engineFilter:BiquadFilterNode;
   private readonly resonance:BiquadFilterNode;
+  private readonly combustion:GainNode;
+  private readonly flutterControls:OscillatorNode[]=[];
+  private readonly flutterAmplitude:GainNode[]=[];
+  private readonly flutterPitch:GainNode[]=[];
   private readonly compressor:DynamicsCompressorNode;
   private disposed=false;
   constructor(private readonly context:BaseAudioContext){
@@ -24,11 +28,21 @@ export class EngineVoice {
     this.highpass=context.createBiquadFilter();this.highpass.type='highpass';this.highpass.frequency.value=24;this.highpass.Q.value=.55;
     this.engineFilter=context.createBiquadFilter();this.engineFilter.type='lowpass';this.engineFilter.frequency.value=1000;this.engineFilter.Q.value=.55;
     this.resonance=context.createBiquadFilter();this.resonance.type='peaking';this.resonance.frequency.value=300;this.resonance.Q.value=.85;this.resonance.gain.value=2;
-    this.highpass.connect(this.resonance);this.resonance.connect(this.engineFilter);this.engineFilter.connect(this.output);
+    this.combustion=context.createGain();this.combustion.gain.value=1;
+    this.highpass.connect(this.resonance);this.resonance.connect(this.engineFilter);this.engineFilter.connect(this.combustion);this.combustion.connect(this.output);
     for(const cycle of ENGINE_CYCLE_BANK){
       const oscillator=context.createOscillator(),gain=context.createGain();gain.gain.value=0;
       oscillator.setPeriodicWave(context.createPeriodicWave(Float32Array.from(cycle.real),Float32Array.from(cycle.imag),{disableNormalization:true}));
       oscillator.connect(gain);gain.connect(this.highpass);oscillator.start();this.bodies.push(oscillator);this.gains.push(gain);
+    }
+    // These two oscillators only drive AudioParams. They add no audible tone
+    // or hiss; their different rhythms prevent a flat sustained engine note.
+    for(const hz of [8.9,12.7]){
+      const control=context.createOscillator(),amplitude=context.createGain(),pitch=context.createGain();
+      control.frequency.value=hz;amplitude.gain.value=pitch.gain.value=0;
+      control.connect(amplitude);amplitude.connect(this.combustion.gain);
+      control.connect(pitch);for(const body of this.bodies)pitch.connect(body.detune);
+      control.start();this.flutterControls.push(control);this.flutterAmplitude.push(amplitude);this.flutterPitch.push(pitch);
     }
   }
   /** replace=false is only for chronological OfflineAudioContext scheduling. */
@@ -43,15 +57,26 @@ export class EngineVoice {
     target(this.engineFilter.frequency,tone.filterHz,.045);
     target(this.resonance.frequency,tone.resonanceHz,.04);target(this.resonance.gain,tone.resonanceDb,.04);
     target(this.output.gain,tone.volume,audible?.025:.012);
+    const smooth=(value:number)=>{const x=Math.max(0,Math.min(1,Number.isFinite(value)?value:0));return x*x*(3-2*x);};
+    // The normal top-speed cruise is around 12,500 RPM, below the absolute
+    // redline. Keep its small mechanical flutter audible without requiring DRS.
+    const upperRegister=smooth((state.rpm-11200)/1400),load=smooth((state.load-.2)/.65);
+    const flutter=audible?upperRegister*load*(1-.85*smooth(state.torqueCut)):0;
+    for(let i=0;i<this.flutterControls.length;i++){
+      target(this.flutterAmplitude[i].gain,flutter*[.055,.022][i],.08);
+      target(this.flutterPitch[i].gain,flutter*[4.8,1.8][i],.08);
+    }
   }
   silence(when=this.context.currentTime){if(!this.disposed){this.output.gain.cancelScheduledValues(when);this.output.gain.setTargetAtTime(0,when,.012);}}
   dispose(){
     if(this.disposed)return;this.disposed=true;
     for(const source of this.bodies){try{source.stop();}catch{}source.disconnect();}
+    for(const source of this.flutterControls){try{source.stop();}catch{}source.disconnect();}
     for(const gain of this.gains)gain.disconnect();
-    this.highpass.disconnect();this.resonance.disconnect();this.engineFilter.disconnect();this.output.disconnect();this.compressor.disconnect();
+    for(const gain of [...this.flutterAmplitude,...this.flutterPitch])gain.disconnect();
+    this.highpass.disconnect();this.resonance.disconnect();this.engineFilter.disconnect();this.combustion.disconnect();this.output.disconnect();this.compressor.disconnect();
   }
-  get summary(){return{source:'CC0-recording-derived-mechanical-cycles',mechanicalWaveforms:ENGINE_CYCLE_BANK.length,airLayers:0,noiseBuffers:0,reference:ENGINE_RECORDING_REFERENCE.source};}
+  get summary(){return{source:'CC0-recording-derived-mechanical-cycles',mechanicalWaveforms:ENGINE_CYCLE_BANK.length,airLayers:0,noiseBuffers:0,highRpmFlutter:{onsetRpm:11200,fullRpm:12600,controlHz:[8.9,12.7],maxLevelDepth:.077,maxPitchCents:6.6},reference:ENGINE_RECORDING_REFERENCE.source};}
 }
 
 export class EngineAudio {

@@ -65,3 +65,40 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+PIT-STOP PREVIEW RECORDINGS (V5)
+All three source recordings are CC0 1.0 Universal:
+https://creativecommons.org/publicdomain/zero/1.0/
+
+wheel-gun.wav: Air Impact Wrench by sevenbsb, Freesound #349398.
+https://freesound.org/people/sevenbsb/sounds/349398/
+Source description: FORTGPRO-FG3200 air impact wrench, SONY ICD-PX312.
+Changes (V5): several recorded impact sections joined with 16ms crossfades
+into a continuous 1-second sample at original pitch; mono PCM16 32000Hz;
+high-pass 95Hz, low-pass 2700Hz, head/tail fades and gain adjustment.
+
+jack.wav: metal clanks.wav by rsellick, Freesound #545547.
+https://freesound.org/people/rsellick/sounds/545547/
+Real metallic clanks used as jack-contact and latch Foley.
+Changes: trim 0.666-0.986 seconds; mono PCM16 32000Hz; high-pass 90Hz,
+low-pass 3100Hz; 1ms/45ms fades; gain 1.1.
+
+tyre.wav: Rubber Band Thud.wav by datsinoil, Freesound #689246.
+https://freesound.org/people/datsinoil/sounds/689246/
+A real gymnastic rubber band recording is used for tyre-contact Foley.
+Changes: short mono 32000Hz PCM16 trim, filtering, gain and fades.
+Source processing details and sample metrics are included in the V5 delivery.
+
+None of these effects is claimed to be an actual Formula 1 team's pit-stop
+recording. No broadcast audio, wind/noise bed or electronic beep is included.
+
+MONACO BLOCKOUT HORIZONTAL REFERENCE DATA (model preview V1)
+Source: Tomislav Bacinger, f1-circuits, circuits/mc-1929.geojson
+https://github.com/bacinger/f1-circuits/blob/master/circuits/mc-1929.geojson
+MIT License, copyright (c) 2019-2025 Tomislav Bacinger.
+The complete MIT permission notice above also applies to this data.
+Changes: local east/north projection; rotated start index; miniature scale;
+closed interpolated road; authored elevations and variable street widths.
+Buildings, marina, boats, tunnel and stands are original procedural geometry.
+The ACM/FIA map graphics are reference-only and are not redistributed.

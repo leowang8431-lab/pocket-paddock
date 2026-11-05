@@ -1,3 +1,4 @@
+import {MONZA_PIT_LAYOUT} from './monza-pit-layout';
 import * as THREE from 'three';
 import { Track } from './track';
 import { createStandLayouts, createBrakingBoards, distanceToStand, standDimensions, type StandLayout } from './stand-layout';
@@ -9,7 +10,12 @@ import {addCircuitSurroundings} from './monza-surroundings';
 import {addMonzaLandmarks,landmarkTreeExclusion} from './monza-landmarks';
 import {addMonzaForest} from './monza-forest';
 import {addTracksideSafety,tracksideTreeExclusion} from './trackside-safety';
+import {addMonzaHistoricOval,createHistoricOvalLayout,historicOvalTreeExclusion} from './monza-historic-oval';
+import {addMonzaHistoricConnection,createHistoricConnectionLayout,distanceToHistoricConnection,historicConnectionTreeExclusion} from './monza-historic-connection';
+import {addMonzaHistoricSouthConnection,createHistoricSouthConnectionLayout} from './monza-historic-south-connection';
+import {createMonzaMarshalLayouts,distanceToMarshalPost} from './monza-marshal-layout';
 import {ARCHITECTURE_HEIGHT_SCALE,scaleArchitectureHeight} from './architecture-scale';
+import {createMonacoGameScenery} from './monaco-game-scenery';
 
 const palette={cream:0xe5e2d8,teal:0x315a50,mint:0x86b7a0,coral:0xc53b34,navy:0x273338,yellow:0xe3bc42};
 const materials=new Map<number,THREE.MeshStandardMaterial>();
@@ -141,6 +147,7 @@ export function grandstand(parent:THREE.Group,layout:StandLayout){
 }
 
 export function createScenery(track:Track):THREE.Group {
+  if(track.id==='monaco')return createMonacoGameScenery(track);
   const root=new THREE.Group();root.name='Monza miniature paddock';
   const base=box(root,65,-3.1,-64,810,5.9,850,0x405b3b);
   base.receiveShadow=true;
@@ -152,7 +159,8 @@ export function createScenery(track:Track):THREE.Group {
   }
   // Pits are on the driver's right of the main straight; the stand faces them.
   const pit=new THREE.Group();pit.name='P房与围场';root.add(pit);
-  box(pit,-45,.035,34,26,.1,190,0x989d97);
+  const foundation=MONZA_PIT_LAYOUT.foundation;
+  const pitFoundation=box(pit,foundation.x,.035,foundation.z,foundation.width,.1,foundation.depth,0x989d97);pitFoundation.name='monza-pit-foundation';
   const pitComplex=addPitComplex(pit,track);
   root.userData.pitComplex=pitComplex.layout;root.userData.pitClockController=pitComplex.clockController;root.userData.pitColliders=pitComplex.colliders;
   // Rendering, full-footprint safety checks and ground collision share one
@@ -161,9 +169,11 @@ export function createScenery(track:Track):THREE.Group {
   root.userData.stands=standLayouts;
   for(const layout of standLayouts)grandstand(root,layout);
   // Finish gantry and the five individually addressable start lights.
-  const gantry=new THREE.Group();gantry.name='start-gantry';root.add(gantry);
-  for(const x of [-99,-71])box(gantry,x,5.4,92,.65,10.8,.65,palette.teal);
-  box(gantry,-85,10.3,92,29,1.5,1.3,palette.cream);
+  const gantry=new THREE.Group();gantry.name='start-gantry';gantry.position.z=MONZA_PIT_LAYOUT.gantryZ-92;root.add(gantry);
+  // The pit-side support sits in the gap after the final strategy room.
+  // Move the complete gantry, lamps and banner together, clear of its roof.
+  for(const x of [-99,-70])box(gantry,x,5.4,92,.65,10.8,.65,palette.teal);
+  box(gantry,-84.55,10.3,92,29.9,1.5,1.3,palette.cream);
   const banner=sign('MONZA  •  TEMPLE OF SPEED',26,1.25);banner.position.set(-85,10.3,92.67);gantry.add(banner);
   box(gantry,-85,8.7,92,10.8,2.1,1.35,palette.navy);
   for(let i=0;i<5;i++){
@@ -173,12 +183,15 @@ export function createScenery(track:Track):THREE.Group {
       bulb.scale.z=.28;bulb.position.set(-89+i*2,8.3+row*.8,92.76);bulb.name=row===0?`start-light-${i}`:`start-light-secondary-${i}`;gantry.add(bulb);
     }
   }
-  // Marshal posts, corner names and braking boards give useful driving references.
-  for(let i=0;i<track.corners.length;i++){
-    const c=track.corners[i],s=track.sampleAt(c.distance),o=s.point.clone().addScaledVector(s.right,29);
-    const hut=new THREE.Group();hut.name=`marshal-post-${i}`;root.add(hut);
-    box(hut,o.x,1.6,o.z,4.4,3.2,4.4,palette.cream);box(hut,o.x,3.4,o.z,5.5,.45,5.5,palette.coral);
-    const label=sign(c.name.split(' · ')[0].toUpperCase(),12,2.4);label.position.copy(o).add(new THREE.Vector3(0,6,0));label.rotation.y=Math.atan2(-s.right.x,-s.right.z);hut.add(label);scaleArchitectureHeight(hut);
+  const historicConnection=createHistoricConnectionLayout(track),historicSouthConnection=createHistoricSouthConnectionLayout(track);
+  const connections=[historicConnection,historicSouthConnection];
+  const marshalPosts=createMonzaMarshalLayouts(track,{excluded:(x,z)=>connections.some(layout=>distanceToHistoricConnection(x,z,layout)<3.05)});
+  root.userData.marshalPosts=marshalPosts;
+  // Move each complete roof and corner label together, not just its walls.
+  for(const post of marshalPosts){
+    const hut=new THREE.Group();hut.name=post.id;root.add(hut);
+    box(hut,post.x,1.6,post.z,4.4,3.2,4.4,palette.cream);box(hut,post.x,3.4,post.z,5.5,.45,5.5,palette.coral);
+    const label=sign(post.name.split(' · ')[0].toUpperCase(),12,2.4);label.position.set(post.x,6,post.z);label.rotation.y=post.yaw;hut.add(label);scaleArchitectureHeight(hut);
   }
   const brakingBoards=createBrakingBoards(track);root.userData.brakingBoards=brakingBoards;
   for(const layout of brakingBoards){
@@ -186,22 +199,21 @@ export function createScenery(track:Track):THREE.Group {
     board.position.set(layout.x,1.7,layout.z);board.rotation.y=layout.yaw;root.add(board);
     box(root,layout.x,.65,layout.z,.14,1.3,.14,palette.teal);
   }
-  // The historic high-speed banking passes over Serraglio, as on the venue map.
-  const bridge=track.sampleAt(track.corners[5].distance-8);const bg=new THREE.Group();bg.position.copy(bridge.point);bg.rotation.y=Math.atan2(bridge.tangent.x,bridge.tangent.z);root.add(bg);
-  const historicDeck=box(bg,0,9.8,0,78,1.1,11,0xbfc2b7);historicDeck.rotation.x=.10;
-  box(bg,0,11.15,-5.3,78,1.5,.4,0xa7b1a5);box(bg,0,10.1,5.3,78,1.5,.4,0xa7b1a5);
-  for(let x=-36;x<38;x+=6.5){box(bg,x,9.1,0,.30,.8,10.4,0x9da79d);box(bg,x,10.6,-5.5,.14,2.4,.14,0x7a8b7d);}
-  for(const x of [-26,26]){box(bg,x,4.9,0,2,9.8,10,0xa6afa3);box(bg,x,7.8,0,6,1.2,11,0xbfc2b7);}
+  // Scenery-only 1955 banking retains the real north/GP underpass relationship.
+  const bridge=track.sampleAt(track.corners[5].distance-8),historicOval=createHistoricOvalLayout(track);
+  addMonzaHistoricOval(root,track,historicOval);
+  addMonzaHistoricConnection(root,track,historicConnection);
+  addMonzaHistoricSouthConnection(root,track,historicSouthConnection);
   root.userData.landmarks=[
-    {id:'pit-building',name:'Palazzina Box / Race Club',x:-40,z:32,width:18,length:165,height:16.1,reference:pitComplex.layout.reference,artistic:'Twelve shortened garage bays with upper Race Club glazing, segmented roof, apron workstations and service circulation; brochure pp.5–9/16 and user pitlane photographs.'},
+    {id:'pit-building',name:'Palazzina Box / Race Club',x:pitComplex.layout.boxes.x,z:32,width:18,length:165,height:16.1,reference:pitComplex.layout.reference,artistic:'Twelve shortened garage bays with upper Race Club glazing, segmented roof, apron workstations and service circulation; brochure pp.5–9/16 and user pitlane photographs.'},
     {id:'hospitality-tower',name:'Tower Hospitality',x:pitComplex.layout.towers[1].x,z:pitComplex.layout.towers[1].z,height:20.8,reference:pitComplex.layout.reference,artistic:'Two independent straight-end towers with glazed viewing floors and pilotis; placement compressed from the official hospitality diagram.'},
-    {id:'fans-club',name:'Fans Club',x:-40,z:105,height:16.3,reference:pitComplex.layout.reference,artistic:'Curved glazed corner of the pit building, distinct from the freestanding towers.'},
+    {id:'fans-club',name:'Fans Club',x:pitComplex.layout.clubs[1].x,z:105,height:16.3,reference:pitComplex.layout.reference,artistic:'Curved glazed corner of the pit building, distinct from the freestanding towers.'},
     {id:'pit-lane',name:'Pit lane',x:-63,z:34,width:12,length:260},
     {id:'centrale',name:'Tribuna Centrale',x:standLayouts[0].x,z:standLayouts[0].z,reference:'Monza official grandstand map, opposite the pit building'},
-    {id:'podium',name:'Podio',x:-53,z:60,width:6,length:15.3,height:7.6,artistic:'Compressed cantilevered podium with Italian tricolour accents.'},
-    {id:'race-control',name:'Direzione Gara',x:-50.8,z:84,width:5.9,length:12.4,height:9.6,artistic:'Interpretive miniature glazed control balcony above the garage apron; not a claim of a planned new control building being complete.'},
+    {id:'podium',name:'Podio',x:-53+MONZA_PIT_LAYOUT.buildingOffsetX,z:60,width:6,length:15.3,height:7.6,artistic:'Compressed cantilevered podium with Italian tricolour accents.'},
+    {id:'race-control',name:'Direzione Gara',x:-50.8+MONZA_PIT_LAYOUT.buildingOffsetX,z:84,width:5.9,length:12.4,height:9.6,artistic:'Interpretive miniature glazed control balcony above the garage apron; not a claim of a planned new control building being complete.'},
     {id:'pit-clock',name:'RIOLEX pit entry clock',x:-63,z:124,width:24,length:.85,height:10.3,reference:pitComplex.layout.reference,artistic:'User-reference green clock bridge, with a fictional RIOLEX wordmark, live analog hands; vertical scaling keeps the doorways and under-beam clearance consistent.'},
-    {id:'historic-banking',name:'Sopraelevata / Serraglio',x:bridge.point.x,z:bridge.point.z,artistic:'Shortened concrete banking crossover with repeated ribs.'},
+    {id:'historic-banking',name:'Sopraelevata / Serraglio',x:bridge.point.x,z:bridge.point.z,reference:historicOval.references[0],artistic:historicOval.artistic},
   ];
   for(const landmark of root.userData.landmarks)if(typeof landmark.height==='number')landmark.height*=ARCHITECTURE_HEIGHT_SCALE;
   root.userData.architecture={heightScale:ARCHITECTURE_HEIGHT_SCALE,footprintsPreserved:true};
@@ -228,7 +240,7 @@ export function createScenery(track:Track):THREE.Group {
   }
   // Keep the established deterministic park. Only trees whose crowns would
   // enter a service bay or the enlarged grandstands move to a nearby clear spot.
-  let relocated=0,relocatedForStands=0,relocatedForServices=0,resampledForFacilities=0;
+  let relocated=0,relocatedForStands=0,relocatedForServices=0,relocatedForHistoric=0,resampledForFacilities=0;
   let relocationSeed=791906;
   const relocationRandom=()=>{relocationSeed=(Math.imul(relocationSeed,1664525)+1013904223)>>>0;return relocationSeed/4294967296;};
   const standTreeExclusion=(x:number,z:number)=>standLayouts.some(stand=>distanceToStand(x,z,stand)<7);
@@ -238,15 +250,17 @@ export function createScenery(track:Track):THREE.Group {
       &&Math.hypot(x-near.point.x,z-near.point.z)>=34
       &&!circuitProps.some(prop=>Math.hypot(x-prop.x,z-prop.z)<Math.hypot(prop.width,prop.depth)/2+3.8)
       &&!backgroundLandmarks.some(layout=>landmarkTreeExclusion(x,z,layout,track))
-      &&!pitTreeExclusion(x,z,pitComplex.layout)&&!tracksideTreeExclusion(x,z,tracksideSafety)&&!standTreeExclusion(x,z);
+      &&!pitTreeExclusion(x,z,pitComplex.layout)&&!tracksideTreeExclusion(x,z,tracksideSafety)&&!standTreeExclusion(x,z)
+      &&!historicOvalTreeExclusion(x,z,historicOval)&&connections.every(layout=>!historicConnectionTreeExclusion(x,z,layout))
+      &&marshalPosts.every(post=>distanceToMarshalPost(x,z,post)>7);
   };
   for(const location of locations){
-    const standConflict=standTreeExclusion(location.x,location.z),serviceConflict=tracksideTreeExclusion(location.x,location.z,tracksideSafety);
-    if(!standConflict&&!serviceConflict)continue;
+    const standConflict=standTreeExclusion(location.x,location.z),serviceConflict=tracksideTreeExclusion(location.x,location.z,tracksideSafety),historicConflict=historicOvalTreeExclusion(location.x,location.z,historicOval)||connections.some(layout=>historicConnectionTreeExclusion(location.x,location.z,layout))||marshalPosts.some(post=>distanceToMarshalPost(location.x,location.z,post)<=7);
+    if(!standConflict&&!serviceConflict&&!historicConflict)continue;
     let moved=false;
     for(const radius of [10,16,24,32,45,64,90,128])for(let i=0;i<16;i++){
       if(moved)continue;const angle=i*Math.PI/8,x=location.x+Math.cos(angle)*radius,z=location.z+Math.sin(angle)*radius;
-      if(x>=-213&&x<=337&&z>=-410&&z<=325&&treeClear(x,z)){location.x=x;location.z=z;moved=true;relocated++;if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;}
+      if(x>=-213&&x<=337&&z>=-410&&z<=325&&treeClear(x,z)){location.x=x;location.z=z;moved=true;relocated++;if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;if(historicConflict)relocatedForHistoric++;}
     }
     // With twenty-one stands a few trees cannot find a local gap. A separate
     // seeded resample keeps all 620 crowns, all four silhouettes and every
@@ -255,12 +269,12 @@ export function createScenery(track:Track):THREE.Group {
       const x=-213+relocationRandom()*550,z=-410+relocationRandom()*735;
       if(treeClear(x,z)){
         location.x=x;location.z=z;moved=true;relocated++;resampledForFacilities++;
-        if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;break;
+        if(standConflict)relocatedForStands++;if(serviceConflict)relocatedForServices++;if(historicConflict)relocatedForHistoric++;break;
       }
     }
     if(!moved)throw new Error('Cannot safely relocate a facility tree');
   }
-  addMonzaForest(root,locations);Object.assign(root.userData.forest,{relocatedForFacilities:relocated,relocatedForStands,relocatedForServices,resampledForFacilities,
+  addMonzaForest(root,locations);Object.assign(root.userData.forest,{relocatedForFacilities:relocated,relocatedForStands,relocatedForServices,relocatedForHistoric,resampledForFacilities,
     facilityClearance:7,locations:locations.map(({x,z,s})=>({x,z,s}))});
   root.userData.grandstands={count:standLayouts.length,spectators:root.children.filter(g=>g.name.startsWith('grandstand-')).reduce((sum,g)=>sum+g.userData.spectators,0),crowdDrawsPerVisibleStand:2,artistic:'Twenty-one authored Monza park stands. The original seven anchors are preserved; fourteen added stands are not claims of actual venue positions.'};
   batchStaticScenery(root);

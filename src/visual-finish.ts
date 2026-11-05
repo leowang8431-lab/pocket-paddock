@@ -48,27 +48,17 @@ export function createCarbonNormalMap():THREE.DataTexture {
   return texture;
 }
 
-/** Fictional game tyre lettering, deliberately not a real supplier's logo. */
+/** Subtle moulded sidewall marks, with no lettering or supplier logo. */
 export function createTyreSidewallTexture():THREE.CanvasTexture {
   const canvas=document.createElement('canvas');canvas.width=canvas.height=512;
   const ctx=canvas.getContext('2d')!;
-  const arcText=(text:string,centerAngle:number)=>{
-    ctx.fillStyle='#d7d8ca';ctx.font='800 31px Arial, sans-serif';
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    const spacing=.16;
-    [...text].forEach((letter,i)=>{
-      const angle=centerAngle+(i-(text.length-1)/2)*spacing;
-      ctx.save();ctx.translate(256+Math.cos(angle)*221,256+Math.sin(angle)*221);
-      ctx.rotate(angle+Math.PI/2);ctx.fillText(letter,0,0);ctx.restore();
-    });
-  };
-  arcText('POCKET',-Math.PI/2);arcText('RACING',Math.PI/2);
   ctx.strokeStyle='#8b918a';ctx.lineWidth=1.2;
   for(let i=0;i<4;i++){
     const angle=i*Math.PI/2+.18;
     ctx.beginPath();ctx.arc(256,256,246,angle,angle+.22);ctx.stroke();
   }
   const texture=new THREE.CanvasTexture(canvas);texture.name='pocket-tyre-sidewall';
+  texture.userData.lettering=false;
   texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=4;
   return texture;
 }

@@ -4,6 +4,10 @@ export type Surface = 'asphalt' | 'grass' | 'gravel';
 export interface Controls { throttle: boolean; brake: boolean; left: boolean; right: boolean; throttleAmount?:number; brakeAmount?:number; steerAmount?:number }
 export interface PhysicsTrack {
   width: number;
+  steeringAngleForSpeed?:(speed:number)=>number;
+  heightAt?:(x:number,z:number)=>number;
+  barrierSegments?:readonly {ax:number;az:number;bx:number;bz:number;radius:number;bottom:number;top:number}[];
+  barrierSegmentsAt?:(x:number,z:number)=>readonly {ax:number;az:number;bx:number;bz:number;radius:number;bottom:number;top:number}[];
   gradeAt?:(distance:number)=>number;
   gradeAlongHeadingAt?:(x:number,z:number,heading:number)=>number;
   barrierOffset?:number;
@@ -72,8 +76,9 @@ export class VehiclePhysics {
     // Rolling resistance and grass drag are not counted as a braking input.
     const longitudinalUse=Math.min(.94,Math.abs(engineAcceleration-brakeAcceleration)/longitudinalGrip);
     const lateralGrip=tireGrip*Math.sqrt(1-longitudinalUse*longitudinalUse);
-    this.frontWheelAngle=this.steering*steeringAngleForSpeed(this.speed);
-    const requestedYaw=this.steering*(this.speed/WHEELBASE)*Math.tan(steeringAngleForSpeed(this.speed));
+    const steeringAngle=(track.steeringAngleForSpeed??steeringAngleForSpeed)(this.speed);
+    this.frontWheelAngle=this.steering*steeringAngle;
+    const requestedYaw=this.steering*(this.speed/WHEELBASE)*Math.tan(steeringAngle);
     const lateralDemand=Math.abs(requestedYaw)*absoluteSpeed;
     const yawLimit=lateralGrip/Math.max(absoluteSpeed,1);
     const targetYaw=clamp(requestedYaw,-yawLimit,yawLimit);
@@ -100,11 +105,17 @@ export class VehiclePhysics {
         exits.sort((a,b)=>a.d-b.d);this.x=exits[0].x;this.z=exits[0].z;this.speed*=.3;this.vx*=.15;this.vz*=.15;this.collision=1;
       }
     }
+    const wallSegments=track.barrierSegmentsAt?.(this.x,this.z)??track.barrierSegments??[];
+    if(wallSegments.length){const height=track.heightAt?.(this.x,this.z)??0;for(const wall of wallSegments){
+      if(height+1.3<wall.bottom||height>wall.top+.2)continue;
+      const dx=wall.bx-wall.ax,dz=wall.bz-wall.az,t=clamp(((this.x-wall.ax)*dx+(this.z-wall.az)*dz)/(dx*dx+dz*dz),0,1),px=wall.ax+t*dx,pz=wall.az+t*dz,ox=this.x-px,oz=this.z-pz,d=Math.hypot(ox,oz),minimum=wall.radius+.95;
+      if(d<minimum){const nx=d>1e-8?ox/d:-dz/Math.hypot(dx,dz),nz=d>1e-8?oz/d:dx/Math.hypot(dx,dz);this.x=px+nx*(minimum+.005);this.z=pz+nz*(minimum+.005);this.speed*=.3;this.vx*=.15;this.vz*=.15;this.collision=1;}
+    }}
     const near=track.nearest(this.x,this.z), dx=this.x-near.point.x,dz=this.z-near.point.z;
     // Perimeter fences remain at their original 24-unit offset. Local road
     // narrowing adds runoff; it must not move the invisible collision wall.
     const lateral=Math.hypot(dx,dz), boundary=track.barrierOffset??track.width/2+16;
-    if(lateral>boundary && this.surface!=='asphalt') {
+    if(!track.barrierSegments?.length&&lateral>boundary && this.surface!=='asphalt') {
       this.x=near.point.x+dx/lateral*(boundary-0.3); this.z=near.point.z+dz/lateral*(boundary-0.3);
       this.speed*=0.35; this.vx*=0.2;this.vz*=0.2; this.collision=1;
     }

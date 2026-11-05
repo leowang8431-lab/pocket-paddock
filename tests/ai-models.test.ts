@@ -35,7 +35,7 @@ test('AI reuses the complete player GLBs, finish and per-driver palettes with on
     const race=new AiRace(track),rivals=race.rivals;
     player.select(rivals[0].team,getDriver(rivals[0].driver));
     models.setVisible(true);models.update(rivals,0);
-    const summary=models.summary;assert.equal(summary.source,'provided-glb');assert.equal(summary.trianglesPerCar,player.summary.triangles);assert.equal(summary.trianglesPerCar,27540);
+    const summary=models.summary;assert.equal(summary.source,'provided-glb');assert.equal(summary.trianglesPerCar,player.summary.triangles);assert.equal(summary.trianglesPerCar,27677);
     assert.deepEqual(summary.dimensions,player.summary.dimensions);assert.equal(summary.cars,5);assert.equal(summary.draws,43);assert.equal(summary.instancedParts,33);assert.equal(summary.decalPartsPerCar,2);
     assert.deepEqual(summary.drivers[0].bodyColors,player.summary.bodyColors);assert.deepEqual(summary.drivers[0].helmetColors,player.summary.helmetColors);
     const parts=meshes(models.group),instanced=parts.filter(m=>m instanceof THREE.InstancedMesh) as THREE.InstancedMesh[];

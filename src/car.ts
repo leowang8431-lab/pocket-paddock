@@ -40,13 +40,8 @@ function tyreTexture(): THREE.CanvasTexture {
   ctx.beginPath();
   ctx.arc(128, 128, 106, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = '#e8c557';
-  ctx.font = 'bold 25px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('POCKET', 128, 51);
-  ctx.font = 'bold 20px Arial, sans-serif';
-  ctx.fillText('RACING', 128, 218);
   const texture = new THREE.CanvasTexture(canvas);
+  texture.userData.lettering = false;
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }

@@ -9,6 +9,14 @@ function normalizedGeometry(source:THREE.BufferGeometry,matrix:THREE.Matrix4){
   if(!geometry.attributes.normal)geometry.computeVertexNormals();
   if(!geometry.attributes.uv)geometry.setAttribute('uv',new THREE.Float32BufferAttribute(new Float32Array(geometry.attributes.position.count*2),2));
   geometry.applyMatrix4(matrix);
+  // A reflected scene transform reverses triangle winding. Once baked into
+  // an identity batch, that reflection no longer lets WebGL flip front faces.
+  if(matrix.determinant()<0)for(const attribute of Object.values(geometry.attributes)){
+    const values=attribute.array,size=attribute.itemSize;
+    for(let i=0;i<attribute.count;i+=3)for(let j=0;j<size;j++){
+      const a=(i+1)*size+j,b=(i+2)*size+j,value=values[a];values[a]=values[b];values[b]=value;
+    }
+  }
   return geometry;
 }
 

@@ -1,11 +1,13 @@
 {
   "name": "pocket-paddock",
   "private": true,
-  "version": "0.12.0",
+  "version": "0.15.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-pit-preview.mjs && node scripts/build-monaco-preview.mjs",
+    "build:pit-preview": "node scripts/build-pit-preview.mjs",
+    "test:pit-preview": "node scripts/check-pit-stop-preview.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "node scripts/check-browser.mjs",
@@ -21,7 +23,11 @@
     "test:circuits": "node scripts/check-circuits.mjs",
     "test:pit-fleet": "node scripts/check-pit-fleet.mjs",
     "test:presentation": "node scripts/check-presentation.mjs",
-    "test:audio": "node scripts/check-audio.mjs"
+    "test:audio": "node scripts/check-audio.mjs",
+    "test:pit-game": "node scripts/check-pit-game.mjs",
+    "build:monaco-preview": "node scripts/build-monaco-preview.mjs",
+    "test:monaco-preview": "node scripts/check-monaco-preview.mjs",
+    "test:monaco-game": "node scripts/check-monaco-game.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

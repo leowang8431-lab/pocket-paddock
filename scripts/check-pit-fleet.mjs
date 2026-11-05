@@ -137,7 +137,7 @@ async function appearanceProof(){
 }
 function assertAppearance(proof,playerTriangles,playerDimensions){
  const s=proof.summary;assert.equal(s.status,'ready');assert.equal(s.source,'provided-glb');assert.equal(s.cars,5);
- assert.equal(s.trianglesPerCar,playerTriangles);assert.equal(s.trianglesPerCar,27540);assert.ok(s.draws<=45&&s.draws>=27,'shared full-model rendering must not become five independent 27-draw cars');compareDimensions(s.dimensions,playerDimensions);
+ assert.equal(s.trianglesPerCar,playerTriangles);assert.equal(s.trianglesPerCar,27677);assert.ok(s.draws<=45&&s.draws>=27,'shared full-model rendering must not become five independent 27-draw cars');compareDimensions(s.dimensions,playerDimensions);
  assert.equal(s.roster.length,5);assert.equal(new Set(s.roster.map(r=>r.driver)).size,5);
  for(let slot=0;slot<s.roster.length;slot++){
   const rival=s.roster[slot];assert.equal(rival.number,drivers[rival.driver].number);

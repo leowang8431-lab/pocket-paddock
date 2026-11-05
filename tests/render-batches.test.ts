@@ -32,3 +32,15 @@ test('spatial scenery batches preserve world bounds, palette and mutable start l
   const actual=batches.map(m=>new THREE.Color().fromBufferAttribute(m.geometry.getAttribute('color'),0).getHex()).sort();
   assert.deepEqual(actual,[...colors].sort());
 });
+
+test('reflected architecture retains outward front faces after its transform is baked into a batch',()=>{
+  const root=new THREE.Group(),reflected=new THREE.Group();reflected.scale.x=-1;reflected.position.x=3;root.add(reflected);
+  reflected.add(new THREE.Mesh(new THREE.BoxGeometry(2,3,4),new THREE.MeshStandardMaterial({color:0x668877})));
+  const before=bounds(root);batchStaticScenery(root,72);sameBounds(before,bounds(root));
+  const mesh=root.children.find(o=>o instanceof THREE.Mesh) as THREE.Mesh;assert.ok(mesh);
+  const p=mesh.geometry.attributes.position,n=mesh.geometry.attributes.normal,a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),normal=new THREE.Vector3();
+  for(let i=0;i<p.count;i+=3){
+    a.fromBufferAttribute(p,i);b.fromBufferAttribute(p,i+1);c.fromBufferAttribute(p,i+2);normal.fromBufferAttribute(n,i);
+    assert.ok(new THREE.Vector3().crossVectors(b.sub(a),c.sub(a)).dot(normal)>0,'Reflected batch has an inward front face');
+  }
+});

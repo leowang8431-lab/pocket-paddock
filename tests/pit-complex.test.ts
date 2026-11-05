@@ -7,6 +7,7 @@ import {createStandLayouts,distanceToStand} from '../src/stand-layout.ts';
 import {batchStaticScenery} from '../src/render-batches.ts';
 import {ARCHITECTURE_HEIGHT_SCALE} from '../src/architecture-scale.ts';
 import {teams} from '../src/team-catalog.ts';
+import {MONZA_PIT_LAYOUT,MONZA_GARAGE_COLLIDER,isMonzaPitApron} from '../src/monza-pit-layout.ts';
 import {createCircuitPropLayouts} from '../src/monza-surroundings.ts';
 
 const track=new Track();
@@ -17,6 +18,9 @@ test('the diagram uses two independent straight-end towers, a pit-corner Fans Cl
   assert.ok(layout.towers[0].z<layout.boxes.z-layout.boxes.depth/2);assert.ok(layout.towers[1].z>layout.boxes.z+layout.boxes.depth/2);
   assert.deepEqual(layout.clubs.map(c=>c.id),['race-club','fans-club','garden-lounge','monza-village']);
   assert.equal(layout.clockBeam.brand,'RIOLEX');assert.ok(layout.clockBeam.clearHeight>6);
+  assert.equal(layout.boxes.x,-37);assert.deepEqual(track.colliders[1],{...MONZA_GARAGE_COLLIDER});
+  assert.equal(layout.clubs[3].x,MONZA_PIT_LAYOUT.village.x);assert.equal(layout.clubs[3].z,MONZA_PIT_LAYOUT.village.z);
+  for(const p of pitFootprint(layout.clubs[3],24)){const road=track.nearest(p.x,p.z);assert.ok(Math.hypot(p.x-road.point.x,p.z-road.point.z)>29,'Village may not cross the track catch fence');}
   for(const p of [...layout.towers,...layout.clockBeam.posts,layout.clubs[2],layout.clubs[3]])for(const v of pitFootprint(p,12)){
     const near=track.nearest(v.x,v.z);assert.ok(Math.hypot(v.x-near.point.x,v.z-near.point.z)>track.width/2+1.5,`${p.id} enters racing asphalt`);
     assert.equal(track.isPitLane(v.x,v.z),false,`${p.id} blocks pit asphalt`);
@@ -36,10 +40,14 @@ test('garage workstations and clock posts leave the complete low-height racing a
     const pos=o.geometry.attributes.position;
     for(let i=0;i<pos.count;i++){
       p.fromBufferAttribute(pos,i).applyMatrix4(o.matrixWorld);if(p.y>2.5)continue;
+      // Ground-level parking paint/pads are the paved working strip itself.
+      if(p.y<.25&&isMonzaPitApron(p.x,p.z))continue;
       vertices++;assert.equal(track.isPitLane(p.x,p.z),false,`${o.name||'pit part'} enters fast pit lane at ${p.x},${p.z}`);
       const n=track.nearest(p.x,p.z);assert.ok(Math.hypot(p.x-n.point.x,p.z-n.point.z)>track.width/2+1.2,'low pit furniture reaches racing surface');
     }
   });
+  const net=built.group.getObjectByName('pit-wall-catch-fence-mesh') as THREE.Mesh;assert.ok(net);assert.ok(net.material instanceof THREE.MeshBasicMaterial);assert.ok(net.material.transparent);assert.ok(net.material.alphaTest<=.01);assert.equal(net.material.depthWrite,false);
+  const netBounds=new THREE.Box3().setFromObject(net);assert.ok(Math.abs(netBounds.min.y-1.6)<1e-5&&Math.abs(netBounds.max.y-4.8)<1e-5);
   assert.ok(vertices>5000);assert.ok(built.group.getObjectByName('tower-north'));assert.ok(built.group.getObjectByName('tower-south'));
   assert.ok(built.group.getObjectByName('monza-fans-club-curved-corner'));
   const labels=built.group.userData.labelTexts as string[];assert.equal(labels.filter(t=>t==='RIOLEX').length,2);
@@ -60,7 +68,7 @@ test('clock hands survive scenery batching/freezing, advance with simulation tim
   built.clockController.update(1);assert.ok(!matrix.equals(second.children[0].matrixWorld));
   assert.equal(pitTreeExclusion(built.layout.towers[0].x,built.layout.towers[0].z,built.layout),true);
   let draws=0,triangles=0;parent.traverse(o=>{if(o instanceof THREE.Mesh){draws++;triangles+=(o.geometry.index?.count??o.geometry.attributes.position.count)/3;}});
-  assert.ok(draws<28,`pit complex alone adds ${draws} draws`);assert.ok(triangles<55000,`pit complex costs ${triangles} triangles`);
+  assert.ok(draws<28,`pit complex alone adds ${draws} draws`);assert.ok(triangles<57500,`pit complex costs ${triangles} triangles`);
 });
 
 
@@ -81,6 +89,12 @@ test('both tower stairs are complete rear access routes with open doors and safe
     // The opening is a real hole in the rear glass, not a painted door or a stair through a wall.
     const origin=tower.localToWorld(new THREE.Vector3(-3.1,6.6,4.4)),direction=new THREE.Vector3(0,0,-1).transformDirection(tower.matrixWorld);
     const hits=new THREE.Raycaster(origin,direction,0,.8).intersectObject(glass);assert.equal(hits.length,0,'rear door is obstructed by glass');
+    // Both straight returns meet the curved front, including the old horizontal
+    // gaps just below the next floor. The intentional rear doorway stays open.
+    for(const side of [-1,1])for(const y of [7,8.70,12.35,16.00,19.65]){
+      const start=tower.localToWorld(new THREE.Vector3(side*5.2,y,2)),towards=new THREE.Vector3(-side,0,0).transformDirection(tower.matrixWorld);
+      assert.ok(new THREE.Raycaster(start,towards,0,.8).intersectObject(glass).length>0,'a tower side or floor junction is still open');
+    }
   }
 });
 
@@ -133,7 +147,10 @@ test('every roster team, including Ferrari, has one fully furnished strategy roo
     assert.equal(group.children.filter(o=>o.name==='strategy-room-side-wall').length,2);
     assert.equal(group.children.filter(o=>o.name==='strategy-room-keyboard').length,4);
     assert.ok(built.group.userData.labelTexts.includes(`${team.name.toUpperCase()} • PIT WALL`),`${team.id} room lacks its own sign`);
-    const fascia=group.getObjectByName('strategy-room-team-fascia') as THREE.Mesh;assert.ok(fascia.material instanceof THREE.MeshStandardMaterial);assert.equal(fascia.material.color.getHexString(),new THREE.Color(team.color).getHexString());
+    const fascia=group.getObjectByName('strategy-room-team-fascia') as THREE.Mesh;assert.ok(fascia.material instanceof THREE.MeshStandardMaterial);assert.equal(fascia.material.color.getHex(),0x315b50);
+    const stripe=group.getObjectByName('strategy-room-team-stripe') as THREE.Mesh;assert.equal((stripe.material as THREE.MeshStandardMaterial).color.getHexString(),new THREE.Color(team.color).getHexString());
+    const rear=group.getObjectByName('strategy-room-rear-wall') as THREE.Mesh;assert.equal((rear.material as THREE.MeshStandardMaterial).color.getHex(),0x355546);
+    const wallBounds=new THREE.Box3().setFromObject(built.group.getObjectByName('pit-wall-original-height')!);assert.ok(room.x-room.width/2-wallBounds.max.x>.3,'strategy room must clear the inner wall face');
     if(i>0)assert.ok(room.z-room.depth/2>(rooms[i-1].z+rooms[i-1].depth/2)+3,'neighbouring rooms require a visible gap');
     for(const p of pitFootprint(room,12)){
       const n=track.nearest(p.x,p.z);assert.equal(track.isPitLane(p.x,p.z),false,`${team.id} room blocks the fast lane`);

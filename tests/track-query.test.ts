@@ -18,6 +18,16 @@ const pitCurve=new THREE.CatmullRomCurve3([
 ].map(([x,z])=>new THREE.Vector3(x,0,z)),false,'centripetal');
 const pit=pitCurve.getPoints(180);
 function linearPit(x:number,z:number):boolean {
+  // Independent full chord scan: GP asphalt, paint and the rendered 9.65-unit
+  // kerb have priority over the overlapping entry/exit pit ribbon.
+  let gap2=Infinity,roadDistance=0;
+  for(let i=0;i<track.samples.length;i++){
+    const a=track.samples[i],b=track.samples[(i+1)%track.samples.length],dx=b.point.x-a.point.x,dz=b.point.z-a.point.z;
+    const t=Math.max(0,Math.min(1,((x-a.point.x)*dx+(z-a.point.z)*dz)/(dx*dx+dz*dz))),distance2=(x-a.point.x-dx*t)**2+(z-a.point.z-dz*t)**2;
+    if(distance2<gap2){gap2=distance2;roadDistance=(a.distance+t*track.length/track.samples.length)%track.length;}
+  }
+  if(Math.sqrt(gap2)<=9.65*track.widthAt(roadDistance)/track.width+.025)return false;
+  if(x>=-58&&x<=-49.5&&z>=-56&&z<=108)return true;
   if(x< -92||x> -54||z< -116||z>188)return false;
   for(let i=0;i<pit.length-1;i++){
     const a=pit[i],b=pit[i+1],dx=b.x-a.x,dz=b.z-a.z;
@@ -70,7 +80,7 @@ test('equal distances keep the original sample order and prior queries cannot bi
   }
 });
 
-test('indexed pit segments preserve the complete curved lane and all edge classifications',()=>{
+test('indexed pit segments match independent lane geometry with full GP-kerb priority at both joins',()=>{
   const offsets=[-6.05,-Math.sqrt(36.5),-6,0,6,Math.sqrt(36.5),6.05];
   for(let i=0;i<=360;i++){
     const p=pitCurve.getPoint(i/360),t=pitCurve.getTangent(i/360),length=Math.hypot(t.x,t.z);

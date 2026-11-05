@@ -98,11 +98,35 @@ try{
    for(let i=Math.ceil(sampleRate*.5);i<sampleRate-Math.ceil(lag)-1;i++){
      const at=i+lag,k=Math.floor(at),v=probe[k]*(1-at+k)+probe[k+1]*(at-k);xy+=probe[i]*v;xx+=probe[i]**2;yy+=v*v;
    }
+   // Measure the rendered level of complete mechanical cycles at a fixed RPM.
+   // Constant waveform/volume gives a flat per-cycle envelope; only the new
+   // high-register controls should produce a small bounded rhythmic variation.
+   const steady=async(rpm,seconds=3)=>{
+     const ctx=new OfflineAudioContext(1,sampleRate*seconds,sampleRate),v=new EngineVoice(ctx);
+     const state={...new Powertrain().summary,gear:8,rpm,targetRpm:rpm,phase:'driving',load:.85,throttle:.7,startBurst:0,launch:0};
+     v.apply(state,true,0,false);const samples=(await ctx.startRendering()).getChannelData(0),period=sampleRate/engineTimbre(state,true).cycleHz,envelope=[];
+     for(let at=Math.ceil(sampleRate*.7/period)*period;at+period<samples.length;at+=period){
+       let power=0;const points=128;
+       for(let j=0;j<points;j++){const offset=at+j*period/points,k=Math.floor(offset),value=samples[k]*(1-offset+k)+samples[k+1]*(offset-k);power+=value*value;}
+       envelope.push(Math.sqrt(power/points));
+     }
+     const mean=envelope.reduce((a,b)=>a+b,0)/envelope.length,cv=Math.sqrt(envelope.reduce((a,b)=>a+(b-mean)**2,0)/envelope.length)/mean;
+     let peak=0,nonFinite=0;for(const value of samples){peak=Math.max(peak,Math.abs(value));if(!Number.isFinite(value))nonFinite++;}
+     v.dispose();return{rpm,seconds,mean,coefficientOfVariation:cv,minRelative:Math.min(...envelope)/mean,maxRelative:Math.max(...envelope)/mean,peak,nonFinite,pcm:Array.from(samples,value=>Math.round(Math.max(-1,Math.min(1,value))*32767))};
+   };
+   const low=await steady(9000),high=await steady(12500,6),redline=await steady(13700);
+   // Hard changes still mute the final graph even while its controls continue.
    const structure={buffers:nodes.buffers,bufferSources:nodes.bufferSources,periodicWaves:nodes.periodicWaves,oscillatorTypes:nodes.oscillators.map(n=>n.type),filterTypes:nodes.filters.map(n=>n.type),voice:voice.summary};
-   return{sampleRate,duration,peak,nonFinite,structure,cycleCorrelation:xy/Math.sqrt(xx*yy),recording:ENGINE_RECORDING_REFERENCE,rms:{idle:rms(.7,.95),stationaryRev:rms(1.7,2.1),accelerating:rms(5,6),muted:rms(11.5,11.9),relaunch:rms(12.5,12.9)},beforeGesture,trace,pcm:Array.from(pcm)};
+   return{sampleRate,duration,peak,nonFinite,structure,cycleCorrelation:xy/Math.sqrt(xx*yy),flutter:{low,high,redline},recording:ENGINE_RECORDING_REFERENCE,rms:{idle:rms(.7,.95),stationaryRev:rms(1.7,2.1),accelerating:rms(5,6),muted:rms(11.5,11.9),relaunch:rms(12.5,12.9)},beforeGesture,trace,pcm:Array.from(pcm)};
  });
  assert.equal(result.nonFinite,0);assert.ok(result.peak>.02&&result.peak<.9);assert.ok(result.rms.stationaryRev>result.rms.idle*1.5);assert.ok(result.rms.accelerating>.015);assert.ok(result.rms.muted<.00001);assert.ok(result.rms.relaunch>.02);
- assert.equal(result.structure.buffers,0);assert.equal(result.structure.bufferSources,0);assert.equal(result.structure.periodicWaves,2);assert.deepEqual(result.structure.oscillatorTypes,['custom','custom']);assert.ok(!result.structure.filterTypes.includes('bandpass'));assert.ok(result.cycleCorrelation>.995,'The fixed-RPM output must repeat real mechanical cycles without an independent random bed');
+ assert.equal(result.structure.buffers,0);assert.equal(result.structure.bufferSources,0);assert.equal(result.structure.periodicWaves,2);assert.deepEqual(result.structure.oscillatorTypes,['custom','custom','sine','sine']);assert.ok(!result.structure.filterTypes.includes('bandpass'));assert.ok(result.cycleCorrelation>.995,'The lower fixed-RPM output must repeat real mechanical cycles without an independent random bed');
+ assert.ok(result.flutter.low.coefficientOfVariation<.003,'Low-register cycles must retain their steady level');
+ for(const sample of [result.flutter.high,result.flutter.redline]){
+  assert.equal(sample.nonFinite,0);assert.ok(sample.peak<.9);
+  assert.ok(sample.coefficientOfVariation>.015&&sample.coefficientOfVariation<.09,'Sustained high RPM needs audible but bounded mechanical flutter');
+  assert.ok(sample.minRelative>.85&&sample.maxRelative<1.15,'Flutter must not hard-cut or surge the engine');
+ }
  assert.equal(result.beforeGesture.context,'not-created');assert.equal(result.beforeGesture.enabled,false);assert.ok(result.trace.filter(s=>s.shift==='up').length>=6);assert.ok(result.trace.filter(s=>s.shift==='down').length>=5);assert.deepEqual(errors,[]);
  const windows={idle:[.7,.95],stationaryRev:[1.7,2.1],accelerating:[5,6],relaunch:[12.5,12.9]};
  result.spectrum=Object.fromEntries(Object.entries(windows).map(([name,[start,end]])=>[name,spectrum(result.pcm,result.sampleRate,start,end)]));
@@ -123,5 +147,12 @@ try{
  const pcm=Buffer.alloc(result.pcm.length*2);result.pcm.forEach((value,i)=>pcm.writeInt16LE(value,i*2));const header=Buffer.alloc(44);
  header.write('RIFF',0);header.writeUInt32LE(36+pcm.length,4);header.write('WAVEfmt ',8);header.writeUInt32LE(16,16);header.writeUInt16LE(1,20);header.writeUInt16LE(1,22);header.writeUInt32LE(result.sampleRate,24);header.writeUInt32LE(result.sampleRate*2,28);header.writeUInt16LE(2,32);header.writeUInt16LE(16,34);header.write('data',36);header.writeUInt32LE(pcm.length,40);
  const file=path.join(out,'Pocket-Paddock-engine-preview.wav');await fs.writeFile(file,Buffer.concat([header,pcm]));delete result.pcm;
+ // A separate six-second steady cruising example lets the user judge the
+ // requested flutter without gear changes obscuring it.
+ const highPcm=Buffer.alloc(result.flutter.high.pcm.length*2);result.flutter.high.pcm.forEach((value,i)=>highPcm.writeInt16LE(value,i*2));
+ const highHeader=Buffer.from(header);highHeader.writeUInt32LE(36+highPcm.length,4);highHeader.writeUInt32LE(highPcm.length,40);
+ const highFile=path.join(out,'Pocket-Paddock-high-rpm-flutter.wav');await fs.writeFile(highFile,Buffer.concat([highHeader,highPcm]));
+ for(const sample of Object.values(result.flutter))delete sample.pcm;
+ result.highRpmWav=highFile;
  const report={status:'passed',method:'Actual OfflineAudioContext render of the same recording-derived, periodic-only EngineVoice used by the game.',...result,wav:file,errors};await fs.writeFile(path.join(out,'audio-validation.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }catch(error){console.error(error);process.exitCode=1;}finally{await browser.close();}

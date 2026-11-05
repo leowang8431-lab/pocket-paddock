@@ -1,3 +1,5 @@
+import './pit-service.css';
+import type {PitCompound} from './pit-stop-animation';
 import {CIRCUITS,type CircuitId} from './circuits';
 import {formatTime, type RaceSession} from './race';
 import type {Track} from './track';
@@ -8,6 +10,12 @@ import type {CameraMode,MenuView} from './camera-profiles';
 import {teams, getTeam, getDriver, DEFAULT_TEAM, DEFAULT_DRIVER, type TeamId, type DriverId} from './team-catalog';
 import {t,isLanguage,translations,localizedCorner,type Language,type TranslationKey,type TranslationParams} from './i18n';
 export interface DrsDisplay {state:'outside'|'ready'|'active'|'wet'|'slow'|'braking'|'offtrack'|'closed';zone:number|null;distanceToZone:number;active:boolean;available:boolean}
+export interface PitDisplay {
+  state:'idle'|'approach'|'service'|'exit';active:boolean;controlled:boolean;limited:boolean;serviceElapsed:number;serviceDuration:number;
+  team:TeamId;compound:PitCompound;currentCompound:PitCompound;completedStops:number;
+}
+const pitLetters:Record<PitCompound,string>={soft:'S',medium:'M',hard:'H',wet:'W'};
+const pitColors:Record<PitCompound,string>={soft:'#e8604a',medium:'#e2bd3c',hard:'#e5e6dc',wet:'#609bdb'};
 export interface CompetitionDisplay {
   enabled:boolean;lap:number;totalLaps:number;position:number;total:number;elapsed:number;finished:boolean;
   rows:{id:string;name:string;position:number;color:string;player:boolean;finished:boolean;/** Optional time gap in seconds. */gap?:number}[];
@@ -46,16 +54,17 @@ export class UI {
   private gamepad={connected:false,name:'',supported:true};
   private competition:CompetitionDisplay={enabled:false,lap:1,totalLaps:3,position:1,total:6,elapsed:0,finished:false,rows:[]};
   private competitionListSignature='';
+  private pit:PitDisplay={state:'idle',active:false,controlled:false,limited:false,serviceElapsed:0,serviceDuration:0,team:DEFAULT_TEAM,compound:'medium',currentCompound:'medium',completedStops:0};
   constructor(){
     this.root=document.querySelector('#app')!;
     this.root.innerHTML=`
     <div id="viewport" aria-label="3D 赛车场景"></div>
-    <header class="topbar"><a class="brand" href="./" aria-label="口袋围场首页"><span class="brand-mark">pp<span>·</span></span><span>Pocket Paddock<small>口 袋 围 场</small></span></a><div class="event-label"><span class="live-dot"></span><span id="event-title">自由计时赛</span> <i></i><span id="circuit-title">MONZA, ITALIA</span> <span class="italy">▮▮▮</span></div><label class="quality-control" title="自动模式会根据帧率调整画质；流畅模式优先降低渲染负担">画质<select id="quality" aria-label="画质设置"><option value="auto">自动</option><option value="performance">流畅</option><option value="balanced">均衡</option><option value="high">精细</option></select><span id="fps" aria-label="帧率">— FPS</span></label><button class="icon-button" id="sound" title="开启引擎声音" aria-label="开启引擎声音">声音 关</button></header>
-    <section class="menu-copy menu-only"><div class="eyebrow"><span>12</span> <b id="circuit-kicker">THE TEMPLE OF SPEED</b></div><h1>下一圈，<br><em>由你领跑。</em></h1><p>选一支车队，找到你的节奏。<br>在蒙扎，把每一个弯变成优势。</p><div class="hero-features"><span>晴雨切换</span><span>键盘 / 手柄</span><span>单人 / 人机</span></div><div class="track-pill"><span class="italy">▮▮▮</span><strong>蒙扎</strong><span>意大利 · 艺术化短赛道</span><span class="pill-arrow">↗</span></div></section>
+    <header class="topbar"><a class="brand" href="./" aria-label="口袋围场首页"><span class="brand-mark">pp<span>·</span></span><span>Pocket Paddock<small>口 袋 围 场</small></span></a><div class="event-label"><span class="live-dot"></span><span id="event-title">自由计时赛</span> <i></i><span id="circuit-title">MONZA, ITALIA</span> <span class="italy">▮▮▮</span></div><label class="quality-control" title="自动模式会根据帧率调整画质；流畅模式优先降低渲染负担">画质<select id="quality" aria-label="画质设置"><option value="auto">自动</option><option value="performance">流畅</option><option value="balanced">均衡</option><option value="high">精细</option></select><span id="fps" aria-label="帧率">— FPS</span></label><button class="icon-button" id="sound" title="开启游戏声音" aria-label="开启游戏声音">声音 关</button></header>
+    <section class="menu-copy menu-only"><div class="eyebrow"><span>13</span> <b id="circuit-kicker">THE TEMPLE OF SPEED</b></div><h1>下一圈，<br><em>由你领跑。</em></h1><p>选一支车队，找到你的节奏。<br>在蒙扎，把每一个弯变成优势。</p><div class="hero-features"><span>晴雨切换</span><span>键盘 / 手柄</span><span>单人 / 人机</span></div><div class="track-pill"><span class="italy">▮▮▮</span><strong>蒙扎</strong><span>意大利 · 艺术化短赛道</span><span class="pill-arrow">↗</span></div></section>
     <section class="car-showcase menu-only" aria-label="赛车展示"><div class="showcase-title"><span class="showcase-number" id="showcase-number">16</span><div><span class="eyebrow">YOUR CONTENDER</span><strong id="showcase-team">Ferrari</strong><small id="showcase-driver">Charles Leclerc</small></div></div><div class="showcase-views" role="group" aria-label="展示角度"><button data-menu-view="front" aria-pressed="true">前侧</button><button data-menu-view="side" aria-pressed="false">侧面</button><button data-menu-view="rear" aria-pressed="false">车尾</button></div><p class="showcase-note">挑选车手，查看车身与头盔细节</p></section>
     <section id="garage" class="garage menu-only team-garage" aria-label="车队与车手设置">
-      <div class="garage-header"><div class="panel-heading"><span class="eyebrow">YOUR PADDOCK</span><span class="version">围场车库 / 12</span></div>
-      <h2>准备你的发车阵容。</h2><p class="muted">11 支车队 · 22 位车手</p><div class="race-mode-setting"><label for="race-mode">比赛模式</label><select id="race-mode" aria-label="比赛模式"><option value="time-trial">单人计时挑战</option><option value="race">人机竞速 · 3 圈 · 5 AI</option></select><small id="race-mode-note">独自练习走线 · 挑战个人最佳</small></div><div class="camera-setting circuit-setting"><label id="circuit-select-label" for="circuit">赛道</label><select id="circuit" aria-label="赛道选择"><option value="monza">蒙扎 · 意大利</option><option value="spa">斯帕 · 比利时</option></select></div><div class="camera-setting"><label for="camera-mode">驾驶视角</label><select id="camera-mode" aria-label="驾驶视角"><option value="close">近距</option><option value="standard" selected>标准</option><option value="far">远距</option></select><span>C / R3</span></div></div>
+      <div class="garage-header"><div class="panel-heading"><span class="eyebrow">YOUR PADDOCK</span><span class="version">围场车库 / 13</span></div>
+      <h2>准备你的发车阵容。</h2><p class="muted">11 支车队 · 22 位车手</p><div class="race-mode-setting"><label for="race-mode">比赛模式</label><select id="race-mode" aria-label="比赛模式"><option value="time-trial">单人计时挑战</option><option value="race">人机竞速 · 3 圈 · 5 AI</option></select><small id="race-mode-note">独自练习走线 · 挑战个人最佳</small></div><div class="camera-setting circuit-setting"><label id="circuit-select-label" for="circuit">赛道</label><select id="circuit" aria-label="赛道选择">${Object.entries(CIRCUITS).map(([id,item])=>`<option value="${id}">${item.zh} · ${item.countryZh}</option>`).join('')}</select></div><div class="camera-setting"><label for="camera-mode">驾驶视角</label><select id="camera-mode" aria-label="驾驶视角"><option value="close">近距</option><option value="standard" selected>标准</option><option value="far">远距</option></select><span>C / R3</span></div></div>
       <div class="garage-scroll">
         <div class="team-grid-heading"><label class="field-title" for="team-select"><span>01</span> 选择车队</label><div class="team-select-wrap"><select id="team-select" aria-label="选择车队">${teams.map(team=>`<option value="${team.id}">${team.label} · ${team.name}</option>`).join('')}</select></div></div>
         <div class="team-grid" id="team-grid" role="group" aria-label="车队阵容">${teams.map(team=>`<button class="team-card" data-team="${team.id}" aria-pressed="false" style="--team-color:${team.color}"><span class="team-code">${teamCodes[team.id]}</span><span class="team-card-name">${team.label}</span><span class="team-check" aria-hidden="true">✓</span></button>`).join('')}</div>
@@ -76,6 +85,7 @@ export class UI {
     <div class="telemetry race-only"><span id="surface">● 沥青路面</span><div class="speed"><strong id="speed">0</strong><span>KM/H</span><b id="gear">N</b></div><div class="engine-readout"><span id="rpm-value">3,300 RPM</span><small id="shift-state"></small></div><div class="rev-bar"><i id="rev-fill"></i></div><div class="pedals"><span id="throttle-led">油门</span><span id="brake-led">制动</span><span>抓地有限</span></div><div id="grip-meter" class="grip-meter"><span>轮胎负荷</span><div><i id="grip-fill"></i></div><b id="grip-label">充足</b></div></div>
     <div class="drs-card race-only"><button id="drs-toggle" type="button" aria-label="切换 DRS 后翼" aria-pressed="false" disabled><span class="drs-wordmark">DRS <i aria-hidden="true">↗</i></span><kbd>F</kbd></button><div class="drs-copy"><strong id="drs-status" role="status">等待开放区</strong><span id="drs-zone"></span></div></div>
     <div id="driving-hint" class="driving-hint race-only" role="status">入弯前制动，出弯后加速</div>
+    <section id="pit-panel" class="pit-service-panel" aria-label="维修区与轮胎" data-state="idle"><div class="pit-service-heading"><div><span class="pit-eyebrow">PIT LANE</span><strong id="pit-status" role="status">手动驾驶</strong></div><span id="pit-limit" class="pit-speed-limit" aria-label="维修区限速120公里每小时"><b>120</b><small>KM/H</small></span></div><div class="pit-tyre-setting"><span class="pit-current"><small id="pit-current-label">当前轮胎</small><b id="pit-current-compound">M</b></span><label id="pit-compound-label" for="pit-compound">下一套</label><select id="pit-compound" aria-label="下一套轮胎"><option value="soft">软胎 · S</option><option value="medium" selected>中性胎 · M</option><option value="hard">硬胎 · H</option><option value="wet">雨胎 · W</option></select></div><div id="pit-service-timer" class="pit-service-timer" hidden><div><span id="pit-time-label">换胎剩余</span><strong id="pit-remaining">—</strong><small id="pit-service-duration"></small></div><div id="pit-progress-track" class="pit-progress-track" role="progressbar" aria-label="换胎进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="pit-progress"></i></div></div><p id="pit-description">驶入维修区，系统自动接管</p><div class="pit-service-foot"><span id="pit-team">Ferrari</span><small id="pit-stop-count"></small></div></section>
     <aside id="competition-leaderboard" class="competition-leaderboard" aria-label="实时比赛排名" hidden><div class="competition-board-heading"><span id="competition-position-label">场上名次</span><strong id="race-position">P01 <small>/ 6</small></strong></div><ol id="competition-rows"></ol></aside>
     <div id="competition-result" class="competition-result" hidden><section class="competition-result-panel" role="dialog" aria-modal="true" aria-labelledby="competition-title"><div class="finish-chequer" aria-hidden="true"></div><span class="eyebrow">CHEQUERED FLAG</span><h2 id="competition-title">冲线完成！</h2><p id="competition-summary"></p><div class="competition-result-stats"><div><span id="competition-result-position-label">完赛名次</span><strong id="competition-result-position">P01</strong></div><div><span id="competition-result-time-label">比赛总用时</span><strong id="competition-result-time">0:00.000</strong></div></div><ol id="competition-result-rows" class="competition-result-rows"></ol><p id="competition-classification-note" class="competition-classification-note">冲线时排名 · 未完赛车按赛道进度排序</p><p id="competition-record-note" class="competition-record-note">竞速圈速不计入计时榜</p><button id="competition-restart" class="primary-button" type="button">再比一场 <span>↗</span></button><button id="competition-garage" class="secondary-button" type="button">返回围场</button></section></div>
     <footer class="controls"><span class="control-group"><kbd>W</kbd><kbd>↑</kbd> 油门</span><span class="control-group"><kbd>S</kbd><kbd>↓</kbd> 制动 / 倒车</span><span class="control-group"><kbd>A</kbd><kbd>D</kbd> 转向</span><span class="control-group desktop-control"><kbd>R</kbd> 重置</span><span class="control-group drs-control"><kbd>F</kbd> DRS</span><span class="control-group desktop-control"><kbd>C</kbd> 视角</span><span class="footer-tag">MADE FOR THE LOVE OF RACING <span>✳</span></span></footer>
@@ -146,7 +156,7 @@ export class UI {
     this.el<HTMLSelectElement>('language').value=language;
     this.el<HTMLSelectElement>('team-select').querySelectorAll('option').forEach(option=>{const team=getTeam(option.value as TeamId);option.textContent=language==='zh'?`${team.label} · ${team.name}`:team.name;});
     this.setTeam(this.selectedTeam,this.selectedDriver);this.setWeather(this.weather);this.setSound(this.soundEnabled);this.setModelStatus(this.modelState);
-    this.setDrs(this.drs);this.setGamepad(this.gamepad);
+    this.setDrs(this.drs);this.setGamepad(this.gamepad);this.renderPit();
     if(this.context)this.update(this.context.race,this.context.vehicle,this.context.track);
     this.setCompetition(this.competition);this.setCircuit(this.circuitId);
     if(this.toastEntry)this.text('toast',this.t(this.toastEntry.key,this.localizedParams(this.toastEntry.params)));
@@ -169,7 +179,7 @@ export class UI {
     this.selectedTeam=teamId;this.selectedDriver=selected.id;
     this.el<HTMLSelectElement>('team-select').value=teamId;
     this.el('garage').style.setProperty('--team-color',team.color);
-    this.root.style.setProperty('--selected-team',team.color);this.text('showcase-team',this.language==='zh'?team.label:team.name);this.text('showcase-driver',this.language==='zh'?selected.label:selected.name);this.text('showcase-number',String(selected.number).padStart(2,'0'));
+    this.root.style.setProperty('--selected-team',team.color);this.renderPit();this.text('showcase-team',this.language==='zh'?team.label:team.name);this.text('showcase-driver',this.language==='zh'?selected.label:selected.name);this.text('showcase-number',String(selected.number).padStart(2,'0'));
     this.text('team-label',team.name);this.text('driver-label',`#${selected.number}`);
     this.text('race-driver',`#${selected.number} ${this.language==='zh'?selected.label:selected.name} · ${this.language==='zh'?team.label:team.name}`);
     this.el('race-driver').style.setProperty('--team-color',team.color);
@@ -195,6 +205,27 @@ export class UI {
     this.text('camera-label',this.t(`camera.${mode}`));
     this.root.querySelectorAll<HTMLButtonElement>('[data-menu-view]').forEach(button=>{const selected=button.dataset.menuView===view;button.setAttribute('aria-pressed',String(selected));button.textContent=this.t(`showcase.${button.dataset.menuView as MenuView}`);});
   }
+  setPit(info:PitDisplay){this.pit={...info};this.renderPit();}
+  private renderPit(){
+    const info=this.pit,panel=this.el('pit-panel'),menu=(this.context?.race.state??document.body.dataset.state??'menu')==='menu';
+    const target=menu?this.root.querySelector('.garage-scroll')!:this.root;
+    if(panel.parentElement!==target){if(menu)target.insertBefore(panel,target.querySelector('.controller-help'));else target.append(panel);}
+    panel.dataset.state=info.state;panel.dataset.active=String(info.active);panel.hidden=this.context?.race.state==='finished';
+    document.body.dataset.pitActive=String(info.active);document.body.dataset.pitControlled=String(info.controlled);panel.dataset.limited=String(info.limited);
+    const team=getTeam(info.active?info.team:this.selectedTeam);panel.style.setProperty('--pit-team',team.color);
+    const label=this.t(`pit.compound.${info.currentCompound}`);this.text('pit-current-compound',pitLetters[info.currentCompound]);
+    this.el('pit-current-compound').style.setProperty('--pit-tyre-color',pitColors[info.currentCompound]);this.el('pit-current-compound').title=label;this.el('pit-current-compound').setAttribute('aria-label',`${this.t('pit.current')}: ${label}`);
+    this.text('pit-current-label',this.t('pit.current'));this.text('pit-compound-label',this.t('pit.next'));
+    const select=this.el<HTMLSelectElement>('pit-compound');select.setAttribute('aria-label',this.t('pit.nextTyres'));select.value=info.compound;select.disabled=info.controlled;
+    for(const option of select.options)option.textContent=this.t(`pit.compound.${option.value as PitCompound}`);
+    this.text('pit-status',this.t(info.state==='idle'&&info.limited?'pit.status.limited':`pit.status.${info.state}`));this.text('pit-description',this.t(info.state==='idle'&&info.limited?'pit.help.exit':`pit.help.${info.state}`));
+    this.text('pit-team',this.language==='zh'?team.label:team.name);this.text('pit-stop-count',info.completedStops?this.t('pit.completed',{count:info.completedStops}):'');
+    const service=info.state==='service',duration=Number.isFinite(info.serviceDuration)?Math.max(0,info.serviceDuration):0,elapsed=Number.isFinite(info.serviceElapsed)?Math.max(0,info.serviceElapsed):0;
+    this.el('pit-service-timer').hidden=!service;this.text('pit-time-label',this.t('pit.remaining'));
+    this.text('pit-remaining',`${Math.max(0,duration-elapsed).toFixed(2)} s`);this.text('pit-service-duration',this.t('pit.target',{seconds:duration.toFixed(2)}));
+    const progress=duration>0?Math.max(0,Math.min(1,elapsed/duration)):0;this.el('pit-progress').style.width=`${progress*100}%`;this.el('pit-progress-track').setAttribute('aria-valuenow',String(Math.round(progress*100)));
+    panel.setAttribute('aria-label',this.t('pit.panel'));this.el('pit-limit').setAttribute('aria-label',this.t('pit.limit'));this.el('pit-progress-track').setAttribute('aria-label',this.t('pit.progress'));
+  }
   setPowertrain(state:PowertrainState){
     this.text('gear',gearLabel(state.gear));this.text('rpm-value',`${Math.round(state.rpm).toLocaleString(this.language==='zh'?'zh-CN':'en-US')} RPM`);
     this.text('shift-state',state.shift?this.t(state.shift==='up'?'engine.up':'engine.down'):'');this.el('gear').dataset.shift=state.shift??'steady';
@@ -206,16 +237,16 @@ export class UI {
   /** Call after update() so the race classification replaces the TT HUD labels. */
   setCircuit(id:CircuitId){
     this.circuitId=id;document.body.dataset.circuit=id;
-    const c=CIRCUITS[id],spa=id==='spa',zh=this.language==='zh';
+    const c=CIRCUITS[id],zh=this.language==='zh';
     this.el<HTMLSelectElement>('circuit').value=id;
     this.text('circuit-select-label',zh?'赛道':'Circuit');
     this.el('circuit').setAttribute('aria-label',zh?'赛道选择':'Circuit selection');
     this.el('circuit').querySelectorAll('option').forEach(option=>{const item=CIRCUITS[option.value as CircuitId];option.textContent=zh?`${item.zh} · ${item.countryZh}`:item.name;});
-    this.text('circuit-title',`${spa?'SPA-FRANCORCHAMPS':'MONZA'}, ${c.country}`);
-    this.root.querySelectorAll('[data-circuit-code]').forEach(el=>{el.textContent=spa?'SPA':'MONZA';});
-    this.text('circuit-kicker',spa?'THE ARDENNES CHALLENGE':'THE TEMPLE OF SPEED');
+    this.text('circuit-title',`${c.heading}, ${c.country}`);
+    this.root.querySelectorAll('[data-circuit-code]').forEach(el=>{el.textContent=c.code;});
+    this.text('circuit-kicker',c.kicker);
     this.root.querySelector('.track-pill strong')!.textContent=zh?c.zh:c.name;
-    this.root.querySelector('.track-pill>span:nth-of-type(2)')!.textContent=zh?`${c.countryZh} · ${spa?'起伏山地赛道':'艺术化短赛道'}`:spa?'Belgium · Hills and forest':'Italy · Miniature circuit';
+    this.root.querySelector('.track-pill>span:nth-of-type(2)')!.textContent=zh?`${c.countryZh} · ${c.kindZh}`:c.locationEn;
     const copy=this.root.querySelector('.menu-copy>p')!;copy.textContent=zh?`选一支车队，找到你的节奏。在${c.zh}，把每一个弯变成优势。`:`Choose your team. Find your rhythm. Make every corner count at ${c.name}.`;
     document.title=zh?'Pocket Paddock · 口袋围场':`Pocket Paddock · ${c.name} ${this.competition.enabled?'Race':'Time Trial'}`;
   }
@@ -282,6 +313,7 @@ export class UI {
     this.el<HTMLSelectElement>('race-mode').disabled=race.state!=='menu';
     this.setDrs(this.drs);
     if(document.body.dataset.state!==race.state)document.body.dataset.state=race.state;
+    this.renderPit();
     this.el('pause-modal').hidden=race.state!=='paused';
     this.el('countdown').hidden=race.state!=='countdown';
     const lightCount=Math.min(5,Math.floor(race.countdown/0.6)+1);

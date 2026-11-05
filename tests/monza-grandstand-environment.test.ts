@@ -8,6 +8,7 @@ import {createPitComplexLayout} from '../src/pit-complex.ts';
 import {createBackgroundLandmarkLayouts} from '../src/monza-landmarks.ts';
 import {createCircuitPropLayouts} from '../src/monza-surroundings.ts';
 import {createTracksideSafetyLayout,distanceToSafetyFootprint} from '../src/trackside-safety.ts';
+import {createHistoricOvalLayout,historicOvalTreeExclusion} from '../src/monza-historic-oval.ts';
 
 type Rect={x:number;z:number;yaw:number;width:number;depth:number};
 function rectangle(p:Rect){const c=Math.cos(p.yaw),s=Math.sin(p.yaw);return[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>({x:p.x+c*a*p.width/2+s*b*p.depth/2,z:p.z-s*a*p.width/2+c*b*p.depth/2}));}
@@ -42,10 +43,11 @@ test('all 620 actual forest centres keep their crowns clear of the expanded stan
   const forest=scene!.userData.forest;
   assert.equal(forest.instances,620);assert.equal(forest.locations.length,620);assert.equal(forest.facilityClearance,7);
   assert.ok(forest.relocatedForStands>0);assert.ok(forest.relocatedForFacilities>=forest.relocatedForStands&&forest.relocatedForFacilities>=forest.relocatedForServices);
-  assert.ok(forest.relocatedForFacilities<=forest.relocatedForStands+forest.relocatedForServices);
+  assert.ok(forest.relocatedForFacilities<=forest.relocatedForStands+forest.relocatedForServices+forest.relocatedForHistoric);
   assert.equal(scene!.userData.grandstands.count,21);assert.equal(scene!.userData.grandstands.spectators,6184);
   assert.equal(scene!.userData.grandstands.crowdDrawsPerVisibleStand,2);
   for(const tree of forest.locations){
+    assert.equal(historicOvalTreeExclusion(tree.x,tree.z,createHistoricOvalLayout(track)),false,'a tree crown covers the historic bank');
     assert.ok(tree.x>=-213&&tree.x<=337&&tree.z>=-410&&tree.z<=325);
     assert.ok(stands.every(s=>distanceToStand(tree.x,tree.z,s)>=7),`tree ${tree.x},${tree.z} enters a stand crown corridor`);
     assert.ok(pit.footprints.every(p=>distanceToSafetyFootprint(tree.x,tree.z,p)>=7));

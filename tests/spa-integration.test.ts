@@ -12,6 +12,7 @@ import {AiRivals} from '../src/ai-rivals.ts';
 import {AiRace} from '../src/ai-race.ts';
 import {getDriver} from '../src/team-catalog.ts';
 import {localizedCorner} from '../src/i18n.ts';
+import {SPA_PIT_LAYOUT} from '../src/spa-pit-layout.ts';
 
 const spa=new Track('spa');
 const heading=(s:{tangent:{x:number;z:number}})=>Math.atan2(s.tangent.x,s.tangent.z);
@@ -51,9 +52,9 @@ test('four independent circuit/weather boards persist completed valid laps and p
   assert.equal(new RaceSession(small,storage).best,48,'legacy track objects without an id retain the Monza dry board');
 });
 
-test('only the two implemented circuits are accepted and lengths retain their real-reference units',()=>{
+test('only the three implemented circuits are accepted and lengths retain their real-reference units',()=>{
   assert.equal(CIRCUITS.monza.realLength,5793);assert.equal(CIRCUITS.spa.realLength,7004);
-  for(const value of ['spa','monza'])assert.equal(isCircuitId(value),true);
+  for(const value of ['spa','monza','monaco'])assert.equal(isCircuitId(value),true);
   for(const value of ['Spa','silverstone','../../models',null,undefined,1,{}])assert.equal(isCircuitId(value),false);
 });
 
@@ -63,7 +64,7 @@ test('road presentation grounds and pitches the car on the actual climb, descent
     close(forward.height,spa.heightAt(s.point.x,s.point.z)+.11);
     close(forward.pitch,-Math.atan(spa.gradeAlongHeadingAt(s.point.x,s.point.z,h)));
     close(reverse.height,forward.height);close(reverse.pitch,-forward.pitch);
-    const near=spa.nearest(s.point.x,s.point.z),transverse=roadPose(spa,s.point.x,s.point.z,heading(near)+Math.PI/2);assert.ok(Math.abs(transverse.pitch)<1e-8);
+    const near=spa.nearest(s.point.x,s.point.z),across=heading(near)+Math.PI/2,transverse=roadPose(spa,s.point.x,s.point.z,across),dx=Math.sin(across)*1.55,dz=Math.cos(across)*1.55,actualCrossGrade=(spa.heightAt(s.point.x+dx,s.point.z+dz)-spa.heightAt(s.point.x-dx,s.point.z-dz))/3.1;close(transverse.pitch,-Math.atan(actualCrossGrade));assert.ok(Math.abs(transverse.pitch)<.003,'A transverse wheelbase must remain almost level on the actual curved roadway');
   }
   const flat=new Track();
   assert.deepEqual(roadPose(flat,100,400,1),{height:.11,pitch:0});
@@ -71,20 +72,25 @@ test('road presentation grounds and pitches the car on the actual climb, descent
 });
 
 test('the car follows the separate pit ramp pitch instead of borrowing the adjacent main straight slope',()=>{
-  const mesh=spa.group.getObjectByName('spa-pit-lane') as THREE.Mesh,positions=mesh.geometry.getAttribute('position');
+  const mesh=spa.group.getObjectByName('spa-pit-lane') as THREE.Mesh,road=spa.group.getObjectByName('spa-road') as THREE.Mesh;assert.ok(mesh&&road);spa.group.updateMatrixWorld(true);
   let rampChecks=0;
-  for(let i=2;i<positions.count-2;i+=2){
-    const x=(positions.getX(i)+positions.getX(i+1))/2,z=(positions.getZ(i)+positions.getZ(i+1))/2;
+  for(let i=2;i<spa.pitPath.length-2;i++){
+    const p=spa.pitPath[i],x=p.x,z=p.z;
     if(!spa.isPitLane(x,z))continue;
-    const before=new THREE.Vector3((positions.getX(i-2)+positions.getX(i-1))/2,0,(positions.getZ(i-2)+positions.getZ(i-1))/2);
-    const after=new THREE.Vector3((positions.getX(i+2)+positions.getX(i+3))/2,0,(positions.getZ(i+2)+positions.getZ(i+3))/2);
+    const before=spa.pitPath[i-1],after=spa.pitPath[i+1];
     const h=Math.atan2(after.x-before.x,after.z-before.z),slope=spa.gradeAlongHeadingAt(x,z,h);
     if(Math.abs(slope)<.045)continue;
     const pose=roadPose(spa,x,z,h);close(pose.height,spa.heightAt(x,z)+.11);
+    const ray=new THREE.Raycaster(new THREE.Vector3(x,100,z),new THREE.Vector3(0,-1,0),0,200),hits=ray.intersectObjects([mesh,road]);
+    // A double-precision path sample can land exactly on a clipped Float32
+    // triangle seam. A 0.1mm game-space nudge distinguishes rounding at that
+    // seam from a genuinely missing section of road.
+    if(!hits.length){ray.ray.origin.x+=.0001;hits.push(...ray.intersectObjects([mesh,road]));}
+    assert.ok(hits.length,'The actual ramp centre has no rendered road underneath');assert.ok(Math.abs(hits[0].point.y-spa.heightAt(x,z)-.052)<.025,'Visible ramp and grounded car use different heights');
     close(pose.pitch,-Math.atan(slope),1e-6);rampChecks++;
   }
   assert.ok(rampChecks>=4,'both authored ramps expose real nonzero elevation and pitch');
-  close(roadPose(spa,-107,170,0).pitch,0);
+  close(roadPose(spa,SPA_PIT_LAYOUT.fastCenterX,170,0).pitch,0);
 });
 
 test('Spa DRS uses the FIA 2025 distances and occupies Kemmel and the pit straight, excluding their braking zones',()=>{
@@ -139,7 +145,7 @@ test('every supplied AI model part shares the player ground transform on the cli
         const actual=o instanceof THREE.InstancedMesh?new THREE.Matrix4().fromArray(o.instanceMatrix.array,0):o.matrix;
         actual.elements.forEach((v,i)=>close(v,source.matrixWorld.elements[i],.00015));checked++;
       });
-      assert.equal(checked,35);assert.equal(models.summary.trianglesPerCar,27540);
+      assert.equal(checked,35);assert.equal(models.summary.trianglesPerCar,27677);
       const before=models.group.children.map(o=>o instanceof THREE.InstancedMesh?Array.from(o.instanceMatrix.array):o.matrix.elements.slice());
       models.update([rival],0);assert.deepEqual(models.group.children.map(o=>o instanceof THREE.InstancedMesh?Array.from(o.instanceMatrix.array):o.matrix.elements.slice()),before);
     }

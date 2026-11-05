@@ -5,6 +5,7 @@ export const MONZA_DRS_REFERENCE='https://www.fia.com/system/files/decision-docu
 export const MONZA_REAL_LENGTH=5793;
 export const SPA_REAL_LENGTH=7004;
 export const SPA_DRS_REFERENCE='https://www.fia.com/system/files/decision-document/2025_belgian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exits_quarantine_zone_and_red_zones.pdf';
+export const MONACO_DRS_REFERENCE='https://www.fia.com/system/files/decision-document/2025_monaco_grand_prix_-_race_directors_event_notes_-_circuit_map_pit_lane_map_ers_battery_containment_area_red_zones.pdf';
 export interface DrsZone {id:1|2;name:string;detection:number;start:number;end:number;sourceYear:2025}
 interface DrsTrack {length:number;width:number;corners:{name:string;distance:number}[];nearest(x:number,z:number):{distance:number}}
 export function wrapDistance(distance:number,length:number){return((distance%length)+length)%length;}
@@ -38,6 +39,15 @@ export function createSpaDrsZones(track:DrsTrack):DrsZone[]{
     {id:1,name:'Kemmel',detection:wrapDistance(eau-240*scale,track.length),start:wrapDistance(crest+305*scale,track.length),end:wrapDistance(combes-110*scale,track.length),sourceYear:2025},
     {id:2,name:'Pit Straight',detection:wrapDistance(busStop-160*scale,track.length),start:wrapDistance(turn19Exit+30*scale,track.length),end:wrapDistance(source-65*scale,track.length),sourceYear:2025},
   ];
+}
+
+/** The retained 2025 map specifies detection 80m after T16 and activation
+ * 18m after T19. Closing before T1 is an authored braking margin. */
+export function createMonacoDrsZones(track:DrsTrack):DrsZone[]{
+ const turn16=track.corners[15],turn19=track.corners[18],turn1=track.corners[0];
+ if(!turn16||!turn19||!turn1)throw new Error('Monaco requires all nineteen corner anchors.');
+ const scale=track.length/3337;
+ return[{id:1,name:'Boulevard Albert I',detection:wrapDistance(turn16.distance+80*scale,track.length),start:wrapDistance(turn19.distance+18*scale,track.length),end:wrapDistance(turn1.distance-35*scale,track.length),sourceYear:2025}];
 }
 export type DrsState='outside'|'ready'|'active'|'wet'|'slow'|'braking'|'offtrack'|'closed';
 export interface DrsSummary {state:DrsState;zone:number|null;distanceToZone:number;active:boolean;available:boolean}

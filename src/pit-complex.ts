@@ -4,8 +4,9 @@ import type {Track} from './track';
 import {teams,type TeamId} from './team-catalog';
 import {createStandLayouts,distanceToStand,type Bounds2} from './stand-layout';
 import {createCircuitPropLayouts} from './monza-surroundings';
-import {addGarageHeaders,pitGlazingMaterial,structuralRod} from './monza-details';
+import {addGarageHeaders,catchFenceMaterial,pitGlazingMaterial,structuralRod} from './monza-details';
 import {ARCHITECTURE_HEIGHT_SCALE,scaleArchitectureHeight} from './architecture-scale';
+import {MONZA_PIT_LAYOUT} from './monza-pit-layout';
 
 const REFERENCE='https://www.monzanet.it/wp-content/uploads/2025/11/Brochure_Hospitality_GPf12026.pdf';
 export interface PitFootprint {
@@ -37,8 +38,10 @@ const footprint=(id:string,kind:string,x:number,z:number,width:number,depth:numb
 
 /** Towers are separate trackside facilities, not two extra cylindrical ends
  * stuck onto the garages. The brochure places them at the two straight ends. */
-export function createPitComplexLayout(track:PitTrack):PitComplexLayout {
-  const boxes=footprint('palazzina-box','garages',-40,32,18,165,16.1);
+export type PitComplexProfile='monza'|'spa-template';
+export function createPitComplexLayout(track:PitTrack,profile:PitComplexProfile='monza'):PitComplexLayout {
+  const buildingOffsetX=profile==='monza'?MONZA_PIT_LAYOUT.buildingOffsetX:0;
+  const boxes=footprint('palazzina-box','garages',-40+buildingOffsetX,32,18,165,16.1);
   const towers:PitFootprint[]=[],stands=createStandLayouts(track),props=createCircuitPropLayouts(track);
   for(const [id,x0,z0]of [['tower-north',-120,-144],['tower-south',-123,206]] as const){
     let chosen:PitFootprint|undefined;
@@ -60,18 +63,18 @@ export function createPitComplexLayout(track:PitTrack):PitComplexLayout {
   });
   // One complete room per roster team, opposite the matching garage bay.
   // Derive coverage from the roster instead of the old every-other-team sample.
-  const strategyPods:StrategyPodLayout[]=teams.map((team,i)=>({...footprint(`pit-strategy-${team.id}`,'strategy-pod',-72.7,-43+i*13.2,3.6,9.4,4.65),teamId:team.id,teamName:team.name}));
+  const strategyPods:StrategyPodLayout[]=teams.map((team,i)=>({...footprint(`pit-strategy-${team.id}`,'strategy-pod',profile==='monza'?MONZA_PIT_LAYOUT.strategyX:-72.7,MONZA_PIT_LAYOUT.firstBayZ+i*MONZA_PIT_LAYOUT.baySpacing,3.6,9.4,4.65),teamId:team.id,teamName:team.name}));
   const clubs=[
-    footprint('race-club','glazed-lounge',-40,22,20.6,151,16.1,7.5,false),
-    footprint('fans-club','curved-pit-corner',-40,105,18.4,19,16.3,7.5,false),
+    footprint('race-club','glazed-lounge',-40+buildingOffsetX,22,20.6,151,16.1,7.5,false),
+    footprint('fans-club','curved-pit-corner',-40+buildingOffsetX,105,18.4,19,16.3,7.5,false),
     footprint('garden-lounge','covered-garden',-22,-86,22.4,22,9.8),
-    footprint('monza-village','paddock-marquees',-15,111,24,22,7.6),
+    footprint('monza-village','paddock-marquees',MONZA_PIT_LAYOUT.village.x,MONZA_PIT_LAYOUT.village.z,24,22,7.6),
   ];
   const posts=[footprint('clock-pillar-left','clock-support',-74.5,124,.72,.9,8.6),footprint('clock-pillar-right','clock-support',-51.5,124,.72,.9,8.6)];
   const clockBeam={...footprint('riolex-clock-bridge','clock-bridge',-63,124,24,.85,10.3,6.8,false),brand:'RIOLEX' as const,clearHeight:6.8,posts};
   const equipment:PitFootprint[]=[];
   for(let i=0;i<12;i++){
-    const z=-43+i*13.2;
+    const z=MONZA_PIT_LAYOUT.firstBayZ+i*MONZA_PIT_LAYOUT.baySpacing;
     equipment.push(footprint(`garage-${i+1}-service-bay`,'pit-apron',-50.6,z,6.1,10.8,6.55,0,false));
   }
   // These objects are the architecture. People, pit equipment, consoles and
@@ -116,9 +119,9 @@ export class PitClockController {
 interface Label {text:string;position:THREE.Vector3;rotation:THREE.Euler;width:number;height:number;fg:string;bg:string}
 /** Textured glass and atlas labels remain one draw each. All opaque structure,
  * machinery, people and seats enter the existing spatial scenery batches. */
-export function addPitComplex(parent:THREE.Group,track:PitTrack){
+export function addPitComplex(parent:THREE.Group,track:PitTrack,profile:PitComplexProfile='monza'){
   const root=scaleArchitectureHeight(new THREE.Group());root.name='monza-pit-complex-v11';parent.add(root);
-  const layout=createPitComplexLayout(track),materials=new Map<number,THREE.MeshStandardMaterial>(),labels:Label[]=[];
+  const layout=createPitComplexLayout(track,profile),materials=new Map<number,THREE.MeshStandardMaterial>(),labels:Label[]=[];
   const mat=(color:number)=>{if(!materials.has(color))materials.set(color,new THREE.MeshStandardMaterial({color,roughness:.78}));return materials.get(color)!;};
   const box=(p:THREE.Object3D,x:number,y:number,z:number,w:number,h:number,d:number,color:number)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(color));m.position.set(x,y,z);m.receiveShadow=true;p.add(m);return m;};
   const cyl=(p:THREE.Object3D,x:number,y:number,z:number,r:number,h:number,color:number,n=12)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,n),mat(color));m.position.set(x,y,z);p.add(m);return m;};
@@ -156,75 +159,78 @@ export function addPitComplex(parent:THREE.Group,track:PitTrack){
   const glassBox=(p:THREE.Object3D,x:number,y:number,z:number,w:number,h:number,d:number)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),glazing);m.position.set(x,y,z);p.add(m);return m;};
   const cream=0xe3e5dd,steel=0xaeb8b3,dark=0x405451,teamColors=teams.map(t=>new THREE.Color(t.color).getHex());
 
-  box(root,-40,.22,32,18,.4,165,0xc4c9bf);box(root,-31.4,3.9,32,.8,7.8,165,0xafbab2);
-  box(root,-40,7.45,32,18,.75,165,cream);box(root,-40,8.0,32,20.2,.4,167,0xc1cbc3);
-  const apron=new THREE.Group();apron.name='pit-service-apron-equipment';apron.position.x=1.8;apron.scale.y=1/ARCHITECTURE_HEIGHT_SCALE;root.add(apron);
+  const building=new THREE.Group();building.name='monza-garage-architecture';building.position.x=profile==='monza'?MONZA_PIT_LAYOUT.buildingOffsetX:0;root.add(building);
+  box(building,-40,.22,32,18,.4,165,0xc4c9bf);box(building,-31.4,3.9,32,.8,7.8,165,0xafbab2);
+  box(building,-40,7.45,32,18,.75,165,cream);box(building,-40,8.0,32,20.2,.4,167,0xc1cbc3);
+  const apron=new THREE.Group();apron.name='pit-service-apron-equipment';apron.position.x=MONZA_PIT_LAYOUT.apronOffsetX;apron.scale.y=1/ARCHITECTURE_HEIGHT_SCALE;root.add(apron);
+  const serviceEquipment=new THREE.Group();serviceEquipment.name='pit-static-service-equipment';serviceEquipment.position.x=profile==='monza'?MONZA_PIT_LAYOUT.equipmentRetreatX:0;apron.add(serviceEquipment);
   // Twelve deep, genuinely open mouths: shutter guides, raised shutters,
   // workshop light bars, equipment and a coloured service apron per bay.
   for(let i=0;i<12;i++){
-    const z=-43+i*13.2,color=teamColors[i]??0x526c60;
-    for(const dz of [-5.75,5.75]){box(root,-40,3.6,z+dz,18,7.2,.45,0x77847a);box(root,-49.45,3.6,z+dz,.62,7.2,.7,cream);}
-    box(root,-34.3,3.0,z,.28,5.7,11.3,0x3c4e4a);box(root,-42,.45,z,14,.1,11.0,0x697870);
-    box(root,-49.5,6.2,z,.36,.6,11.45,steel);
-    for(let slat=0;slat<5;slat++)box(root,-49.72,5.6+slat*.12,z,.12,.06,10.4,0x85978e);
-    for(const dz of [-5.45,5.45]){box(root,-49.84,3.15,z+dz,.15,5.9,.15,steel);box(root,-49.93,3.0,z+dz,.025,5.1,.035,0x435951);}
-    for(const x of [-47.7,-43.4,-38.8])box(root,x,6.3,z,.18,.1,9.8,0xf3f1d9);
-    box(root,-35.15,1.7,z+3.55,.9,2.3,2.8,0x65786b);box(root,-35.65,2.9,z+3.55,.95,.14,3,color);
-    for(let shelf=0;shelf<3;shelf++)box(root,-35.7,.85+shelf*.67,z+3.55,1,.07,2.6,dark);
-    for(const dz of [-3.8,-2.7])for(let tyre=0;tyre<3;tyre++)cyl(root,-44.4,.66+tyre*.36,z+dz,.46,.35,0x27302d);
+    const z=MONZA_PIT_LAYOUT.firstBayZ+i*MONZA_PIT_LAYOUT.baySpacing,color=teamColors[i]??0x526c60;
+    for(const dz of [-5.75,5.75]){box(building,-40,3.6,z+dz,18,7.2,.45,0x77847a);box(building,-49.45,3.6,z+dz,.62,7.2,.7,cream);}
+    box(building,-34.3,3.0,z,.28,5.7,11.3,0x3c4e4a);box(building,-42,.45,z,14,.1,11.0,0x697870);
+    box(building,-49.5,6.2,z,.36,.6,11.45,steel);
+    for(let slat=0;slat<5;slat++)box(building,-49.72,5.6+slat*.12,z,.12,.06,10.4,0x85978e);
+    for(const dz of [-5.45,5.45]){box(building,-49.84,3.15,z+dz,.15,5.9,.15,steel);box(building,-49.93,3.0,z+dz,.025,5.1,.035,0x435951);}
+    for(const x of [-47.7,-43.4,-38.8])box(building,x,6.3,z,.18,.1,9.8,0xf3f1d9);
+    box(building,-35.15,1.7,z+3.55,.9,2.3,2.8,0x65786b);box(building,-35.65,2.9,z+3.55,.95,.14,3,color);
+    for(let shelf=0;shelf<3;shelf++)box(building,-35.7,.85+shelf*.67,z+3.55,1,.07,2.6,dark);
+    for(const dz of [-3.8,-2.7])for(let tyre=0;tyre<3;tyre++)cyl(building,-44.4,.66+tyre*.36,z+dz,.46,.35,0x27302d);
     // A wheeled tool trolley, folded front jack and cable reel inside the bay.
-    box(root,-46.4,1.0,z+3.7,1.15,1.15,2.0,color);
-    for(let drawer=0;drawer<4;drawer++)box(root,-47.0,.63+drawer*.23,z+3.7,.035,.035,1.76,0xc6d1c6);
-    for(const dz of [-.75,.75])for(const dx of [-.45,.45])cyl(root,-46.4+dx,.35,z+3.7+dz,.15,.16,0x22372e,8).rotation.z=Math.PI/2;
-    box(root,-47.2,.58,z-3.9,1.8,.13,.4,0xc9d2c2);rod(root,[-47.9,.6,z-3.9],[-46.4,1.8,z-3.9],.055,steel);
-    const extinguisher=cyl(root,-48.1,.95,z+4.75,.17,.9,0xb84333,10);box(root,extinguisher.position.x,1.48,z+4.75,.1,.16,.18,0x263a31);
+    box(building,-46.4,1.0,z+3.7,1.15,1.15,2.0,color);
+    for(let drawer=0;drawer<4;drawer++)box(building,-47.0,.63+drawer*.23,z+3.7,.035,.035,1.76,0xc6d1c6);
+    for(const dz of [-.75,.75])for(const dx of [-.45,.45])cyl(building,-46.4+dx,.35,z+3.7+dz,.15,.16,0x22372e,8).rotation.z=Math.PI/2;
+    box(building,-47.2,.58,z-3.9,1.8,.13,.4,0xc9d2c2);rod(building,[-47.9,.6,z-3.9],[-46.4,1.8,z-3.9],.055,steel);
+    const extinguisher=cyl(building,-48.1,.95,z+4.75,.17,.9,0xb84333,10);box(building,extinguisher.position.x,1.48,z+4.75,.1,.16,.18,0x263a31);
     // Shared yellow service limit / parking rectangle stays outside fast lane.
-    box(apron,-53,.1,z,5.2,.13,10.7,0x77887b);
-    for(const dz of [-5.2,5.2])box(apron,-53,.18,z+dz,5.5,.025,.11,0xe4cf81);
-    box(apron,-55.75,.185,z,.11,.025,10.55,0xe4cf81);box(apron,-52.6,.19,z,2.9,.026,.15,color);
+    const parkingX=MONZA_PIT_LAYOUT.parkingLocalX;
+    box(apron,parkingX,.1,z,5.2,.13,10.7,0x77887b);
+    for(const dz of [-5.2,5.2])box(apron,parkingX,.18,z+dz,5.5,.025,.11,0xe4cf81);
+    box(apron,parkingX-2.75,.185,z,.11,.025,10.55,0xe4cf81);box(apron,parkingX+.4,.19,z,2.9,.026,.15,color);
     // The horizontal boom and hanging cable are above the service bay, not the
     // pit fast lane; alternate bays leave the building silhouette legible.
     if(i%2===0){
-      box(apron,-49.85,5.1,z-4.25,.22,2.65,.22,0x71877a);
-      rod(apron,[-49.85,6.4,z-4.25],[-55.0,6.4,z-4.25],.065,0xb9c7b9);
-      rod(apron,[-49.85,5.4,z-4.25],[-54.1,6.4,z-4.25],.045,0x879a8c);
-      rod(apron,[-54.8,6.35,z-4.25],[-54.8,2.2,z-4.25],.025,0x253c30);
-      box(apron,-54.8,1.95,z-4.25,.20,.5,.22,0x3d5646);
+      box(serviceEquipment,-49.85,5.1,z-4.25,.22,2.65,.22,0x71877a);
+      rod(serviceEquipment,[-49.85,6.4,z-4.25],[-55.0,6.4,z-4.25],.065,0xb9c7b9);
+      rod(serviceEquipment,[-49.85,5.4,z-4.25],[-54.1,6.4,z-4.25],.045,0x879a8c);
+      rod(serviceEquipment,[-54.8,6.35,z-4.25],[-54.8,2.2,z-4.25],.025,0x253c30);
+      box(serviceEquipment,-54.8,1.95,z-4.25,.20,.5,.22,0x3d5646);
     }
-    // Two mechanics and a monitor desk: all shoulders and tools remain within
-    // the fixed service bay, clear even where the pit spline bulges eastward.
-    for(const [j,dz] of [-2.8,2.9].entries())person(apron,`mechanic-${i+1}-${j+1}`,'mechanic',teams[i]?.id??'circuit',color,-52.5,z+dz);
-    box(apron,-50.6,1.24,z+3.9,1.35,.15,2.4,0x697f72);
+    // Stationary crew and desks retreat into the open garage, leaving the
+    // parked car and the sixteen animated tyre-service staff a clear workspace.
+    for(const [j,dz] of [-2.8,2.9].entries())person(serviceEquipment,`mechanic-${i+1}-${j+1}`,'mechanic',teams[i]?.id??'circuit',color,-52.5,z+dz);
+    box(serviceEquipment,-50.6,1.24,z+3.9,1.35,.15,2.4,0x697f72);
     for(const dz of [3.25,4.55]){
-      box(apron,-50.1,2.0,z+dz,.13,.98,1.18,0x20352e);box(apron,-50.05,1.57,z+dz,.23,.5,.16,0x6d8375);
-      panel(apron,i%3,-50.18,2.02,z+dz,1.03,.80,new THREE.Euler(0,-Math.PI/2,0));
+      box(serviceEquipment,-50.1,2.0,z+dz,.13,.98,1.18,0x20352e);box(serviceEquipment,-50.05,1.57,z+dz,.23,.5,.16,0x6d8375);
+      panel(serviceEquipment,i%3,-50.18,2.02,z+dz,1.03,.80,new THREE.Euler(0,-Math.PI/2,0));
     }
-    box(apron,-50.7,1.36,z+3.9,.46,.07,1.35,0x263a30);panel(apron,7,-50.7,1.402,z+3.9,1.18,.37,new THREE.Euler(-Math.PI/2,0,Math.PI/2));
-    box(root,-34.48,4.4,z-1.0,.14,1.45,3.1,0x233c31);panel(root,3,-34.56,4.4,z-1.0,2.86,1.23,new THREE.Euler(0,-Math.PI/2,0));
-    for(const dz of [-4.85,4.85])box(root,-48.4,5.7,z+dz,1.6,.09,.10,0xe9eacb);
+    box(serviceEquipment,-50.7,1.36,z+3.9,.46,.07,1.35,0x263a30);panel(serviceEquipment,7,-50.7,1.402,z+3.9,1.18,.37,new THREE.Euler(-Math.PI/2,0,Math.PI/2));
+    box(building,-34.48,4.4,z-1.0,.14,1.45,3.1,0x233c31);panel(building,3,-34.56,4.4,z-1.0,2.86,1.23,new THREE.Euler(0,-Math.PI/2,0));
+    for(const dz of [-4.85,4.85])box(building,-48.4,5.7,z+dz,1.6,.09,.10,0xe9eacb);
     // Coiled air hose, pressure bottle and a short overhead cable tray.
-    const hose=new THREE.Mesh(new THREE.TorusGeometry(.31,.045,5,16),mat(0x293e32));hose.rotation.y=-Math.PI/2;hose.position.set(-48.8,2.1,z-4.7);root.add(hose);
-    cyl(root,-47.9,1.0,z-4.75,.20,1.4,0x6b8582);box(root,-47.9,1.78,z-4.75,.13,.13,.20,0xaabbaa);
-    box(root,-48.5,6.65,z,1.0,.12,10.2,0x71897c);
+    const hose=new THREE.Mesh(new THREE.TorusGeometry(.31,.045,5,16),mat(0x293e32));hose.rotation.y=-Math.PI/2;hose.position.set(-48.8,2.1,z-4.7);building.add(hose);
+    cyl(building,-47.9,1.0,z-4.75,.20,1.4,0x6b8582);box(building,-47.9,1.78,z-4.75,.13,.13,.20,0xaabbaa);
+    box(building,-48.5,6.65,z,1.0,.12,10.2,0x71897c);
 
-    for(const x of [-55.25,-54.65]){cyl(apron,x,.5,z+3.85,.43,.7,0x26342b);box(apron,x,.15,z+3.85,.7,.1,1.0,0x6c8170);}
+    for(const x of [-55.25,-54.65]){cyl(serviceEquipment,x,.5,z+3.85,.43,.7,0x26342b);box(serviceEquipment,x,.15,z+3.85,.7,.1,1.0,0x6c8170);}
   }
-  if(typeof document!=='undefined')addGarageHeaders(root);
+  if(typeof document!=='undefined')addGarageHeaders(building);
 
   // The continuous Race Club rooms occupy the first/second hospitality levels.
-  box(root,-40,9.0,22,18,1.1,143,cream);box(root,-40,12.8,22,18,.7,143,cream);
-  glassBox(root,-49.12,10.8,22,.12,2.72,141);glassBox(root,-30.88,10.8,22,.12,2.72,141);
-  for(let z=-47;z<93;z+=4.7)for(const x of [-49.28,-30.72])box(root,x,10.8,z,.17,3.0,.15,0xe6eae1);
-  box(root,-40,13.38,22,20.3,.38,146,0xc4cdc4);
-  for(let z=-48;z<96;z+=9.2){box(root,-40,13.6,z,19.9,.035,.12,0x9eaea2);for(const x of [-49.55,-30.45])box(root,x,13.95,z,.07,.9,.07,0x869d8e);}
-  for(const x of [-49.55,-30.45])for(const y of [13.75,14.3])box(root,x,y,22,.07,.07,145,0x869d8e);
+  box(building,-40,9.0,22,18,1.1,143,cream);box(building,-40,12.8,22,18,.7,143,cream);
+  glassBox(building,-49.12,10.8,22,.12,2.72,141);glassBox(building,-30.88,10.8,22,.12,2.72,141);
+  for(let z=-47;z<93;z+=4.7)for(const x of [-49.28,-30.72])box(building,x,10.8,z,.17,3.0,.15,0xe6eae1);
+  box(building,-40,13.38,22,20.3,.38,146,0xc4cdc4);
+  for(let z=-48;z<96;z+=9.2){box(building,-40,13.6,z,19.9,.035,.12,0x9eaea2);for(const x of [-49.55,-30.45])box(building,x,13.95,z,.07,.9,.07,0x869d8e);}
+  for(const x of [-49.55,-30.45])for(const y of [13.75,14.3])box(building,x,y,22,.07,.07,145,0x869d8e);
   // Eight shallow roof bays give the outlined diagram its long segmented roof.
   for(let z=-44;z<92;z+=17.8){
-    for(const sign of [-1,1]){const roof=box(root,-40+sign*5.1,14.1,z,10.4,.20,17.4,0xe6e9df);roof.rotation.z=-sign*.055;}
-    rod(root,[-50.1,13.95,z-8.5],[-40,15.5,z-8.5],.06,0xe8ece1);rod(root,[-40,15.5,z-8.5],[-29.9,13.95,z-8.5],.06,0xe8ece1);
+    for(const sign of [-1,1]){const roof=box(building,-40+sign*5.1,14.1,z,10.4,.20,17.4,0xe6e9df);roof.rotation.z=-sign*.055;}
+    rod(building,[-50.1,13.95,z-8.5],[-40,15.5,z-8.5],.06,0xe8ece1);rod(building,[-40,15.5,z-8.5],[-29.9,13.95,z-8.5],.06,0xe8ece1);
   }
-  label(root,'RACE CLUB',-49.32,12.85,8,23,.9,-Math.PI/2);
-  label(root,'AUTODROMO NAZIONALE MONZA',-49.57,8.48,27,89,1.0,-Math.PI/2,'#2d4c3b','#e7eadf');
+  label(building,'RACE CLUB',-49.32,12.85,8,23,.9,-Math.PI/2);
+  label(building,'AUTODROMO NAZIONALE MONZA',-49.57,8.48,27,89,1.0,-Math.PI/2,'#2d4c3b','#e7eadf');
 
   const curvedPoints=(rx:number,rz:number)=>Array.from({length:25},(_,i)=>{const a=i/24*Math.PI;return new THREE.Vector2(Math.cos(a)*rx,-Math.sin(a)*rz);});
   const dShape=(rx:number,rz:number,back:number)=>new THREE.Shape([...curvedPoints(rx,rz).map(p=>new THREE.Vector2(p.x,-p.y)),new THREE.Vector2(-rx,-back),new THREE.Vector2(rx,-back)]);
@@ -232,27 +238,38 @@ export function addPitComplex(parent:THREE.Group,track:PitTrack){
     const shape=dShape(rx,rz,back),g=new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:false,curveSegments:12}).rotateX(-Math.PI/2);
     const m=new THREE.Mesh(g,mat(color));m.position.y=y;p.add(m);return m;
   };
-  const curvedWall=(p:THREE.Group,bottom:number,top:number,rx:number,rz:number)=>{
+  const curvedWall=(p:THREE.Group,bottom:number,top:number,rx:number,rz:number,back:number)=>{
     const vertices:number[]=[],uv:number[]=[],indices:number[]=[],points=curvedPoints(rx,rz);
     for(let i=0;i<points.length;i++){const v=points[i];vertices.push(v.x,bottom,v.y,v.x,top,v.y);uv.push(i/24,0,i/24,1);if(i<24){const k=i*2;indices.push(k,k+2,k+1,k+1,k+2,k+3);}}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(indices);g.computeVertexNormals();p.add(new THREE.Mesh(g,glazing));
+    // A semicircular front needs two straight return walls to meet the rear.
+    // Without these faces the D-shaped floors remain visibly open at the sides.
+    for(const side of [-1,1]){
+      glassBox(p,side*rx,(bottom+top)/2,back/2,.12,top-bottom,back+.08);
+      box(p,side*rx,(bottom+top)/2,back,.13,top-bottom,.13,0xdce4d8);
+    }
   };
   // Fans Club is the broad rounded corner of the P building in the supplied
   // photograph, distinct from the two slender, freestanding Tower facilities.
-  const fans=new THREE.Group();fans.name='monza-fans-club-curved-corner';fans.position.set(-40,0,105);fans.rotation.y=Math.PI/2;root.add(fans);
+  const fans=new THREE.Group();fans.name='monza-fans-club-curved-corner';fans.position.set(-40,0,105);fans.rotation.y=Math.PI/2;building.add(fans);
   for(const y of [7.8,11.5,15.2])slab(fans,y,8.8,8.8,8.4,0xd4ded1,.32);
-  for(const [lo,hi]of [[8.15,11.4],[11.85,15.1]])curvedWall(fans,lo,hi,8.45,8.45);
+  for(const [lo,hi]of [[8.12,11.51],[11.82,15.21]]){
+    curvedWall(fans,lo,hi,8.45,8.45,8.4);
+    glassBox(fans,0,(lo+hi)/2,8.4,16.9,hi-lo,.13);
+  }
+  // Close the roof edge above the upper curtain wall, including its flat back.
+  slab(fans,15.51,8.8,8.8,8.4,0xd4ded1,.20);
   for(let i=0;i<=24;i++){const a=i/24*Math.PI;box(fans,Math.cos(a)*8.47,11.6,-Math.sin(a)*8.47,.13,7.1,.13,0xe0e7dc);}
   for(const y of [8.3,11.95])for(let i=0;i<24;i++){const a=i/24*Math.PI,b=(i+1)/24*Math.PI;rod(fans,[Math.cos(a)*8.86,y,-Math.sin(a)*8.86],[Math.cos(b)*8.86,y,-Math.sin(b)*8.86],.04,0xaebcaf);}
-  label(root,'FANS CLUB',-49.22,14.5,105,12,1.0,-Math.PI/2);
+  label(building,'FANS CLUB',-49.22,14.5,105,12,1.0,-Math.PI/2);
   // Control room, compact podium and flagpoles remain over the garage apron.
-  box(root,-50.8,7.0,84,5.6,.4,11.8,0xbfcbbd);glassBox(root,-53.15,8.2,84,.12,1.9,10.8);box(root,-50.8,9.45,84,5.9,.3,12.4,0xcbd7c6);
-  label(root,'RACE CONTROL',-53.35,7.35,84,9.3,.65,-Math.PI/2);
-  box(root,-53.0,4.05,60,6,.45,15.3,0xbdcabc);box(root,-50,5.6,60,.35,3.8,15.3,0x31583d);
-  for(let j=0;j<3;j++)box(root,-53.1,4.52+(j===1?.2:0),56+j*4,2.1,.5+(j===1?.4:0),3.0,cream);
-  for(let z=52.7;z<67.6;z+=2.4)box(root,-56.1,4.8,z,.07,1.25,.07,0x879e8a);box(root,-56.1,5.43,60,.07,.07,15.3,0x879e8a);
-  label(root,'MONZA',-50.23,6.1,60,11.5,1.0,-Math.PI/2);
-  for(const z of [55,60,65]){box(root,-50.2,8.4,z,.06,3.8,.06,0xb4c4b3);for(let i=0;i<3;i++)box(root,-50.2,9.5,z+.3+i*.42,.025,1.0,.42,[0x278c55,0xf1f0e8,0xc44d3a][i]);}
+  box(building,-50.8,7.0,84,5.6,.4,11.8,0xbfcbbd);glassBox(building,-53.15,8.2,84,.12,1.9,10.8);box(building,-50.8,9.45,84,5.9,.3,12.4,0xcbd7c6);
+  label(building,'RACE CONTROL',-53.35,7.35,84,9.3,.65,-Math.PI/2);
+  box(building,-53.0,4.05,60,6,.45,15.3,0xbdcabc);box(building,-50,5.6,60,.35,3.8,15.3,0x31583d);
+  for(let j=0;j<3;j++)box(building,-53.1,4.52+(j===1?.2:0),56+j*4,2.1,.5+(j===1?.4:0),3.0,cream);
+  for(let z=52.7;z<67.6;z+=2.4)box(building,-56.1,4.8,z,.07,1.25,.07,0x879e8a);box(building,-56.1,5.43,60,.07,.07,15.3,0x879e8a);
+  label(building,'MONZA',-50.23,6.1,60,11.5,1.0,-Math.PI/2);
+  for(const z of [55,60,65]){box(building,-50.2,8.4,z,.06,3.8,.06,0xb4c4b3);for(let i=0;i<3;i++)box(building,-50.2,9.5,z+.3+i*.42,.025,1.0,.42,[0x278c55,0xf1f0e8,0xc44d3a][i]);}
 
   // Tall, narrow standalone towers stand on pilotis, with glazed viewing floors
   // and an external access stair, as in brochure p.14 rather than a castle.
@@ -260,14 +277,15 @@ export function addPitComplex(parent:THREE.Group,track:PitTrack){
     const g=new THREE.Group();g.name=spec.id;g.position.set(spec.x,0,spec.z);g.rotation.y=spec.yaw;root.add(g);
     for(const x of [-3.8,3.8])for(const z of [-1.7,3.1])box(g,x,2.6,z,.33,5.2,.33,0x97aaa3);
     box(g,3.9,7.4,3.1,2,14.8,2.5,0xb2c0b7);
-    for(const y of [5.1,8.75,12.4,16.05,19.7])slab(g,y,4.95,4.55,4.1,0xc6d2ca,.28);
+    const floors=[5.1,8.75,12.4,16.05,19.7];
+    for(const y of floors)slab(g,y,4.95,4.55,4.1,0xc6d2ca,y===19.7?.42:.28);
     for(let floor=0;floor<4;floor++){
-      const lo=5.4+floor*3.65,hi=8.65+floor*3.65;curvedWall(g,lo,hi,4.7,4.3);
+      const lo=floors[floor]+.28,hi=floors[floor+1]+.01;curvedWall(g,lo,hi,4.7,4.3,3.97);
       if(floor===0){
-        glassBox(g,-4.025,(lo+hi)/2,3.97,.45,hi-lo,.13);glassBox(g,.925,(lo+hi)/2,3.97,6.65,hi-lo,.13);
-        glassBox(g,-3.1,8.225,3.97,1.4,.85,.13);
+        glassBox(g,-4.25,(lo+hi)/2,3.97,.9,hi-lo,.13);glassBox(g,1.15,(lo+hi)/2,3.97,7.1,hi-lo,.13);
+        glassBox(g,-3.1,(7.8+hi)/2,3.97,1.4,hi-7.8,.13);
         for(const x of [-3.83,-2.37])box(g,x,6.59,4.00,.13,2.42,.16,0xdce4d8);box(g,-3.1,7.80,4.00,1.6,.13,.16,0xdce4d8);
-      }else glassBox(g,0,(lo+hi)/2,3.97,8.5,hi-lo,.13);
+      }else glassBox(g,0,(lo+hi)/2,3.97,9.4,hi-lo,.13);
       for(let i=0;i<=12;i++){const a=i/12*Math.PI;box(g,Math.cos(a)*4.72,(lo+hi)/2,-Math.sin(a)*4.32,.12,hi-lo,.12,0xe4e9e1);}
     }
     slab(g,20.12,5.1,4.7,4.25,0x526d61,.18);
@@ -312,7 +330,7 @@ export function addPitComplex(parent:THREE.Group,track:PitTrack){
   }
   label(garden,'GARDEN LOUNGE',0,4.4,-1.66,16,.85);
   // Village is behind the pit block and clear of Monza House / transporters.
-  const village=new THREE.Group();village.name='monza-village-marquees';village.position.set(-15,0,111);root.add(village);
+  const village=new THREE.Group();village.name='monza-village-marquees';village.position.set(MONZA_PIT_LAYOUT.village.x,0,MONZA_PIT_LAYOUT.village.z);root.add(village);
   for(const x of [-6,6])for(const z of [-5,5]){
     box(village,x,2.0,z,9.8,4.0,8.8,0xe5e9db);glassBox(village,x,2.0,z+4.45,8.4,2.7,.12);
     const roof=new THREE.Mesh(new THREE.ConeGeometry(7.3,3.0,4).rotateY(Math.PI/4),mat(0xf0f1e5));roof.scale.z=.90;roof.position.set(x,5.5,z);village.add(roof);
@@ -321,27 +339,39 @@ export function addPitComplex(parent:THREE.Group,track:PitTrack){
 
   // Rear stairs, louvres and service doors are useful visual detail from both
   // the grid and paddock cameras, without external model downloads.
-  box(root,-22.8,.06,31,8,.12,166,0x9ba997);
+  box(building,-22.8,.06,31,8,.12,166,0x9ba997);
   for(const z of [-18,41,87]){
-    for(let step=0;step<15;step++)box(root,-27,step*.47+.25,z-5.5+step*.72,4.9,.18,1.05,0xa5b5a5);
-    for(const x of [-29.3,-24.7])rod(root,[x,1.3,z-5.5],[x,8.1,z+4.8],.06,0x78937f);
-    box(root,-27,7.3,z+5.15,5.5,.18,2,0xa1b29e);
+    for(let step=0;step<15;step++)box(building,-27,step*.47+.25,z-5.5+step*.72,4.9,.18,1.05,0xa5b5a5);
+    for(const x of [-29.3,-24.7])rod(building,[x,1.3,z-5.5],[x,8.1,z+4.8],.06,0x78937f);
+    box(building,-27,7.3,z+5.15,5.5,.18,2,0xa1b29e);
   }
-  for(let z=-42;z<101;z+=13.2){box(root,-30.97,2.4,z,.10,4.6,3.0,0x667e6d);for(let i=0;i<5;i++)box(root,-30.83,6.25+i*.12,z,.04,.05,4.6,0x809a85);}
-  for(const z of [-25,23,67]){box(root,-35,14.8,z,4.4,.8,5.7,0x8fa28e);for(let i=0;i<7;i++)box(root,-37.25,14.8,z-2.3+i*.7,.05,.6,.07,0x546f5c);}
+  for(let z=-42;z<101;z+=13.2){box(building,-30.97,2.4,z,.10,4.6,3.0,0x667e6d);for(let i=0;i<5;i++)box(building,-30.83,6.25+i*.12,z,.04,.05,4.6,0x809a85);}
+  for(const z of [-25,23,67]){box(building,-35,14.8,z,4.4,.8,5.7,0x8fa28e);for(let i=0;i<7;i++)box(building,-37.25,14.8,z-2.3+i*.7,.05,.6,.07,0x546f5c);}
   // Leave a service corridor between the building and pit wall.
   const pitWall=new THREE.Group();pitWall.name='pit-wall-original-height';pitWall.scale.y=1/ARCHITECTURE_HEIGHT_SCALE;root.add(pitWall);
   box(pitWall,-73.8,.72,34,.7,1.45,218,0xc8d0c2);box(pitWall,-73.8,1.52,34,.9,.16,218,0x6d8373);
+  if(profile==='monza'){
+    const safety=new THREE.Group();safety.name='pit-wall-catch-fence';safety.scale.y=1/ARCHITECTURE_HEIGHT_SCALE;root.add(safety);
+    const fenceMat=catchFenceMaterial();if(fenceMat.map)fenceMat.map.repeat.set(218,3.2);
+    const fence=new THREE.Mesh(new THREE.PlaneGeometry(218,3.2),fenceMat);fence.name='pit-wall-catch-fence-mesh';fence.rotation.y=Math.PI/2;fence.position.set(-73.8,3.2,34);fence.castShadow=false;safety.add(fence);
+    for(let z=-75;z<=143;z+=4){
+      box(safety,-73.8,3.20,z,.12,3.30,.12,0x899b94);
+      rod(safety,[-73.8,4.84,z],[-74.15,5.25,z],.035,0x899b94);
+    }
+    for(const y of [1.65,4.80])rod(safety,[-73.8,y,-75],[-73.8,y,143],.025,0xaeb8b3);
+    safety.userData={wallX:-73.8,minZ:-75,maxZ:143,bottom:1.6,top:4.8,style:'galvanised-mesh'};
+  }
   for(let pod=0;pod<layout.strategyPods.length;pod++){
     const spec=layout.strategyPods[pod],team=teams.find(t=>t.id===spec.teamId)!,z=spec.z,color=new THREE.Color(team.color).getHex();
-    const station=new THREE.Group();station.name=spec.id;station.scale.y=1/ARCHITECTURE_HEIGHT_SCALE;station.userData={teamId:team.id,teamName:team.name,engineers:4,monitors:8,completeRoom:true};root.add(station);
-    const floor=box(station,-72.7,.14,z,3.6,.28,9.4,0xa8b9a8);floor.name='strategy-room-floor';const roof=box(station,-72.7,4.52,z,3.6,.22,9.4,0xe1e8dc);roof.name='strategy-room-roof';
-    for(const dz of [-4.55,4.55]){box(station,-74.15,2.35,z+dz,.12,4.1,.12,0x607f6c);const side=box(station,-72.7,2.35,z+dz,2.9,4.1,.10,0x355546);side.name='strategy-room-side-wall';box(station,-72.7,.65,z+dz,2.9,.26,.12,color);}
-    box(station,-72.6,2.32,z,1.65,.16,8.75,0x607d69);const rear=box(station,-74.12,2.35,z,.16,4.1,9.1,color);rear.name='strategy-room-rear-wall';
+    const station=new THREE.Group();station.name=spec.id;station.position.x=spec.x+72.7;station.scale.y=1/ARCHITECTURE_HEIGHT_SCALE;station.userData={teamId:team.id,teamName:team.name,engineers:4,monitors:8,completeRoom:true,palette:'circuit-green-and-ivory'};root.add(station);
+    const floor=box(station,-72.7,.14,z,3.6,.28,9.4,0xe1e8dc);floor.name='strategy-room-floor';const roof=box(station,-72.7,4.52,z,3.6,.22,9.4,0xe1e8dc);roof.name='strategy-room-roof';
+    for(const dz of [-4.55,4.55]){box(station,-74.15,2.35,z+dz,.12,4.1,.12,0x607f6c);const side=box(station,-72.7,2.35,z+dz,2.9,4.1,.10,0x355546);side.name='strategy-room-side-wall';box(station,-72.7,.65,z+dz,2.9,.26,.12,0xe1e8dc);}
+    box(station,-72.6,2.32,z,1.65,.16,8.75,0x607d69);const rear=box(station,-74.12,2.35,z,.16,4.1,9.1,0x355546);rear.name='strategy-room-rear-wall';
     box(station,-73.0,.74,z-3.7,1.0,1.1,1.05,0x263d31);for(let j=0;j<5;j++)box(station,-72.48,.46+j*.15,z-3.7,.025,.04,.78,0x769684);
-    const fascia=box(station,-71.02,4.22,z,.14,.74,9.1,color);fascia.name='strategy-room-team-fascia';
-    label(station,`${team.name.toUpperCase()} • PIT WALL`,-70.94,4.22,z,8.2,.48,Math.PI/2,'#f5f1df',team.color);
-    label(station,team.name.toUpperCase(),-74.21,4.05,z,8.2,.43,-Math.PI/2,'#f5f1df',team.color);
+    const fascia=box(station,-71.02,4.22,z,.14,.74,9.1,0x315b50);fascia.name='strategy-room-team-fascia';
+    const stripe=box(station,-70.94,3.80,z,.025,.075,8.5,color);stripe.name='strategy-room-team-stripe';
+    label(station,`${team.name.toUpperCase()} • PIT WALL`,-70.94,4.22,z,8.2,.48,Math.PI/2,'#f5f1df','#315b50');
+    label(station,team.name.toUpperCase(),-74.21,4.05,z,8.2,.43,-Math.PI/2,'#f5f1df','#315b50');
     for(let seat=0;seat<4;seat++){
       const dz=-3.0+seat*2.0,cz=z+dz;
       for(let tier=0;tier<2;tier++){

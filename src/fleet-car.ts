@@ -6,6 +6,8 @@ import {Car} from './car';
 import {createRubberNormalMap,createCarbonNormalMap,createTyreSidewallTexture} from './visual-finish';
 import {DEFAULT_DRIVER,DEFAULT_TEAM,getDriver,getTeam,type DriverOption,type TeamId} from './team-catalog';
 import {createDrsWing} from './drs-wing';
+import {attachMirrorSupports} from './car-mirror-supports';
+import {createSidepodWordmark} from './sidepod-wordmark';
 
 type ModelState = 'loading' | 'ready' | 'fallback';
 type MaterialPalette = Record<string,{color:number[];metalness:number;roughness:number}>;
@@ -172,6 +174,7 @@ export class FleetCar {
       this.model.scale.setScalar(MODEL_SCALE);
       this.prepareFinish();
       this.drsHinge=createDrsWing(this.model);
+      attachMirrorSupports(this.model);
       this.setDrs(this.drsOpen,true);
       for(const axle of ['front','rear'] as const)for(const side of ['left','right'] as const){
         const pivot=this.model.getObjectByName(`wheel-${axle}-${side}`);
@@ -273,7 +276,7 @@ export class FleetCar {
   private addDetailTrim():void{
     if(!this.model)return;
     this.sidewallMaterial=new THREE.MeshBasicMaterial({
-      name:'pocket-tyre-lettering',map:createTyreSidewallTexture(),transparent:true,
+      name:'pocket-tyre-sidewall-finish',map:createTyreSidewallTexture(),transparent:true,
       alphaTest:.06,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1,
     });
     for(const wheel of this.wheels){
@@ -299,7 +302,7 @@ export class FleetCar {
       const material=new THREE.MeshStandardMaterial({name:'cockpit-fabric-and-padding',color:0x151b20,roughness:.85,metalness:0,envMapIntensity:.2});
       const trim=new THREE.Mesh(merged,material);trim.name='driver-cockpit-trim';trim.castShadow=trim.receiveShadow=true;this.model.add(trim);
     }
-    this.group.userData.visualFinish={clearcoat:true,normalMaps:['rubber','carbon'],tyreLettering:'POCKET / RACING',decalSize:[1024,512]};
+    this.group.userData.visualFinish={clearcoat:true,normalMaps:['rubber','carbon'],tyreLettering:false,decalSize:[1024,512]};
   }
 
   /** Three small metal/accent primitives share one lit, multicolour draw. The
@@ -367,7 +370,8 @@ export class FleetCar {
       ctx.strokeStyle=dark?'#fff8e6':'#142f36';ctx.fillStyle=dark?'#142f36':'#fff8e6';ctx.lineWidth=Math.max(3,size*.08);
       ctx.strokeText(value,x,y,maxWidth);ctx.fillText(value,x,y,maxWidth);
     };
-    text(getTeam(this.team).name.toUpperCase(),256,66,48,490);
+    // Leave consistent margins for the longest names as well as the short ones.
+    text(getTeam(this.team).name.toUpperCase(),256,64,56,456);
     text(String(this.driver.number),128,194,112,236,true);
     const code:Record<TeamId,string>={mclaren:'MCL',ferrari:'FER',redbull:'RBR',mercedes:'MER',aston:'AMR',alpine:'ALP',williams:'WIL',haas:'HAA',racingbulls:'VCB',audi:'AUD',cadillac:'CAD'};
     ctx.fillStyle=getTeam(this.team).color;
@@ -378,7 +382,7 @@ export class FleetCar {
 
   private addDecals():void{
     if(!this.model||!this.helmet)return;
-    const parts:THREE.BufferGeometry[]=[];
+    const parts:THREE.BufferGeometry[]=[],wordmarks:Record<string,unknown>[]=[];
     const numberUV=[0,0,.5,.5] as const;
     const wordmarkUV=[0,.5,1,1] as const;
     const crestUV=[.5,0,1,.5] as const;
@@ -392,12 +396,12 @@ export class FleetCar {
     // Rear-wing endplate numbers replace the source's expensive 3D lettering.
     for(const side of [-1,1]){
       plane(.184,.132,numberUV,new THREE.Vector3(side*.519,.805,-1.38),new THREE.Euler(0,side*Math.PI/2,0));
-      plane(.58,.112,wordmarkUV,new THREE.Vector3(side*.484,.346,-.27),new THREE.Euler(0,side*Math.PI/2,0));
+      const wordmark=createSidepodWordmark(this.model,side,wordmarkUV);parts.push(wordmark);wordmarks.push({...wordmark.userData});
     }
     // The tiny nose badge identifies the team without inventing a sponsor logo.
     plane(.132,.078,crestUV,new THREE.Vector3(0,.425,1.29),new THREE.Euler(-Math.PI/2,0,0));
     const merged=mergeGeometries(parts,false);parts.forEach(part=>part.dispose());
-    if(merged){const mesh=new THREE.Mesh(merged,this.decalMaterial);mesh.name='driver-and-team-decals';mesh.renderOrder=2;this.model.add(mesh);}
+    if(merged){const mesh=new THREE.Mesh(merged,this.decalMaterial);mesh.name='driver-and-team-decals';mesh.renderOrder=2;mesh.userData.wordmarks=wordmarks;this.model.add(mesh);}
     // A curved patch follows the back of the helmet and is legible from chase view.
     const positions:number[]=[],uvs:number[]=[],indices:number[]=[];
     const columns=10,rows=4;
@@ -417,7 +421,7 @@ export class FleetCar {
 }
 
 /** Follow the rounded sidewall profile rather than floating a flat decal disc
- * outside a curved tyre. Its only colour is the shared transparent lettering. */
+ * outside a curved tyre. Only the subtle, transparent moulded marks are drawn. */
 function tyreSidewallGeometry(source:THREE.BufferGeometry,side:number,radius:number):THREE.BufferGeometry{
   const position=source.attributes.position,profile=new Map<number,number>();
   for(let i=0;i<position.count;i++){

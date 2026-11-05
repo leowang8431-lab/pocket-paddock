@@ -5,6 +5,9 @@ import {createPitComplexLayout,pitFootprint} from './pit-complex';
 import {createBackgroundLandmarkLayouts,distanceToLandmark} from './monza-landmarks';
 import {createCircuitPropLayouts} from './monza-surroundings';
 import {structuralRod} from './monza-details';
+import {createHistoricOvalLayout,historicOvalTreeExclusion,distanceToHistoricOval} from './monza-historic-oval';
+import {createHistoricConnectionLayout,historicConnectionContains,distanceToHistoricConnection} from './monza-historic-connection';
+import {createHistoricSouthConnectionLayout} from './monza-historic-south-connection';
 
 export const MONZA_MEDICAL_REFERENCE='https://www.monzanet.it/lassistenza-sanitaria-per-gli-eventi-dellautodromo-nazionale-monza-affidata-ad-areu/';
 export const MONZA_SERVICE_REFERENCE='https://www.fia.com/system/files/decision-document/2025_italian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exit_map_quarantine_zone_and_red_zones.pdf';
@@ -12,16 +15,41 @@ interface Footprint {x:number;z:number;yaw:number;width:number;depth:number}
 export interface SafetyVehicle extends Footprint {id:string;kind:'recovery-crane'|'medical-van';height:number;reference:string;artistic:string}
 export interface TyreBarrier {id:string;corner:string;distance:number;side:number;offsets:number[];stacks:number;spacing:number;layers:number;tyres:number}
 export interface TracksideSafetyLayout {vehicles:SafetyVehicle[];tyreBarriers:TyreBarrier[];artistic:string}
+export const BUFFER_TYRE_RADIUS=.44;
+export const BUFFER_TYRE_THICKNESS=.36;
+
+/** A laid-down, unmounted race tyre: thick shoulders and sidewalls wrap into
+ * a recessed bead and open inner barrel. The centre has no cap or disc. One
+ * low-resolution lathe is shared by the entire instanced barrier collection. */
+export function createBufferTyreGeometry():THREE.LatheGeometry{
+  const profile=[
+    [.22,-.145],[.32,-.18],[.405,-.147],[.44,-.09],[.44,.09],
+    [.405,.147],[.32,.18],[.22,.145],[.195,.095],[.195,-.095],[.22,-.145],
+  ];
+  const geometry=new THREE.LatheGeometry(profile.map(([r,y])=>new THREE.Vector2(r,y)),12);
+  const positions=geometry.getAttribute('position'),colors=new Float32Array(positions.count*3);
+  for(let i=0;i<positions.count;i++){
+    const x=positions.getX(i),y=positions.getY(i),z=positions.getZ(i),radius=Math.hypot(x,z),angle=Math.atan2(z,x);
+    // The inner barrel stays dark even without costly self-shadow passes.
+    // Soft, deterministic wear varies rubber by a few percent; no tyre text.
+    const surface=radius<.215?.23:radius<.235?.48:Math.abs(y)>.13?.95:.76;
+    const wear=.95+.035*Math.sin(angle*3+y*27)+.015*Math.cos(angle*7-y*11);
+    colors.set([surface*wear,surface*wear,surface*wear],i*3);
+  }
+  geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+  geometry.computeBoundingBox();geometry.computeBoundingSphere();
+  return geometry;
+}
 export function distanceToSafetyFootprint(x:number,z:number,p:Footprint){
   const c=Math.cos(p.yaw),s=Math.sin(p.yaw),dx=x-p.x,dz=z-p.z;
   return Math.hypot(Math.max(0,Math.abs(c*dx-s*dz)-p.width/2),Math.max(0,Math.abs(s*dx+c*dz)-p.depth/2));
 }
 export function safetyFootprint(p:Footprint,steps=8){return pitFootprint({...p,id:'safety',kind:'safety',height:1,minY:0,solid:false},steps);}
 export function tyreStackPositions(track:Track,barrier:TyreBarrier){
-  const points:{x:number;z:number;y:number;distance:number;offset:number}[]=[];
+  const points:{x:number;z:number;y:number;distance:number;offset:number;layer:number}[]=[];
   for(let i=0;i<barrier.stacks;i++)for(const offset of barrier.offsets){
     const distance=barrier.distance+(i-(barrier.stacks-1)/2)*barrier.spacing,sample=track.sampleAt(distance);
-    for(let layer=0;layer<barrier.layers;layer++)points.push({x:sample.point.x+sample.right.x*offset*barrier.side,z:sample.point.z+sample.right.z*offset*barrier.side,y:.18+layer*.26,distance,offset});
+    for(let layer=0;layer<barrier.layers;layer++)points.push({x:sample.point.x+sample.right.x*offset*barrier.side,z:sample.point.z+sample.right.z*offset*barrier.side,y:.22+layer*BUFFER_TYRE_THICKNESS,distance,offset,layer});
   }
   return points;
 }
@@ -30,6 +58,9 @@ export function tyreStackPositions(track:Track,barrier:TyreBarrier){
  * fictional medical livery are authored for this miniature, not a 2026 survey. */
 export function createTracksideSafetyLayout(track:Track):TracksideSafetyLayout{
   const stands=createStandLayouts(track),pit=createPitComplexLayout(track),landmarks=createBackgroundLandmarkLayouts(track),props=createCircuitPropLayouts(track);
+  const historic=track.id==='monza'?createHistoricOvalLayout(track):undefined;
+  const connection=historic?createHistoricConnectionLayout(track):null;
+  const southConnection=historic?createHistoricSouthConnectionLayout(track):null;
   const vehicles:SafetyVehicle[]=[],tyreBarriers:TyreBarrier[]=[];
   const buildings=pit.footprints;
   for(const [kind,cornerIndex]of [['recovery-crane',0],['recovery-crane',3],['medical-van',2],['medical-van',7]] as const){
@@ -41,6 +72,9 @@ export function createTracksideSafetyLayout(track:Track):TracksideSafetyLayout{
       if(safetyFootprint(candidate).every(p=>{
         const n=track.nearest(p.x,p.z);
         return Math.hypot(p.x-n.point.x,p.z-n.point.z)>26&&!track.isPitLane(p.x,p.z)
+          &&(!historic||!historicOvalTreeExclusion(p.x,p.z,historic,2))
+          &&!historicConnectionContains(p.x,p.z,connection,2)
+          &&!historicConnectionContains(p.x,p.z,southConnection,2)
           &&stands.every(s=>distanceToStand(p.x,p.z,s)>3)&&buildings.every(b=>distanceToSafetyFootprint(p.x,p.z,b)>2)
           &&landmarks.every(b=>distanceToLandmark(p.x,p.z,b)>3)&&props.every(b=>distanceToSafetyFootprint(p.x,p.z,b)>2)
           &&track.corners.every(c=>{const s=track.sampleAt(c.distance);return Math.hypot(p.x-s.point.x-s.right.x*29,p.z-s.point.z-s.right.z*29)>4.4;});
@@ -53,9 +87,16 @@ export function createTracksideSafetyLayout(track:Track):TracksideSafetyLayout{
     for(const rowOffsets of [[22.30,23.22],[23.22]])for(const advance of [0,-12,-24,12,24,-36,36,-50,50,-65,65])for(const side of [1,-1]){
       if(placed)continue;
       const candidate:TyreBarrier={id:`tyre-buffer-${cornerIndex}`,corner:track.corners[cornerIndex].name,distance:track.corners[cornerIndex].distance+advance,side,offsets:rowOffsets,stacks:20,spacing:.92,layers:3,tyres:20*rowOffsets.length*3};
-      const safe=tyreStackPositions(track,candidate).filter(p=>p.y<.2).every(p=>{
+      const safe=tyreStackPositions(track,candidate).filter(p=>p.layer===0).every(p=>{
         const inner=track.sampleAt(p.distance),ix=inner.point.x+inner.right.x*18.5*side,iz=inner.point.z+inner.right.z*18.5*side;
         if(track.surfaceAt(ix,iz)!=='gravel')return false;
+        // Audit the entire circular tyre footprint, not just its centre or a
+        // few selected vertices. Distance-to-ribbon is 1-Lipschitz, so keeping
+        // the centre one tyre radius plus .4 away protects every rotation.
+        const historicClearance=BUFFER_TYRE_RADIUS+.4;
+        if((historic&&distanceToHistoricOval(p.x,p.z,historic)<historicClearance)
+          ||distanceToHistoricConnection(p.x,p.z,connection)<historicClearance
+          ||distanceToHistoricConnection(p.x,p.z,southConnection)<historicClearance)return false;
         for(let k=0;k<8;k++){
           const x=p.x+Math.cos(k*Math.PI/4)*.44,z=p.z+Math.sin(k*Math.PI/4)*.44,n=track.nearest(x,z),distance=Math.hypot(x-n.point.x,z-n.point.z);
           if(distance<21.8||distance>23.8||track.isPitLane(x,z)||stands.some(s=>distanceToStand(x,z,s)<1)||buildings.some(b=>distanceToSafetyFootprint(x,z,b)<1)||landmarks.some(b=>distanceToLandmark(x,z,b)<1))return false;
@@ -128,8 +169,8 @@ export function addTracksideSafety(root:THREE.Group,track:Track,layout=createTra
       const label=new THREE.Mesh(geometry,labelMat);label.position.set((medical?1.73:2.22)*side,medical?2.98:2.65,medical?-1.4:-2.65);label.rotation.y=side*Math.PI/2;p.add(label);
     }
   }
-  const count=layout.tyreBarriers.reduce((sum,b)=>sum+b.tyres,0),tyres=new THREE.InstancedMesh(new THREE.TorusGeometry(.31,.13,4,10).rotateX(Math.PI/2),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.97}),count),object=new THREE.Object3D(),black=new THREE.Color(0x303932),end=new THREE.Color(0xbcc4b6);let index=0;
+  const count=layout.tyreBarriers.reduce((sum,b)=>sum+b.tyres,0),tyres=new THREE.InstancedMesh(createBufferTyreGeometry(),new THREE.MeshStandardMaterial({color:0xffffff,roughness:.98,metalness:0,vertexColors:true}),count),object=new THREE.Object3D(),black=new THREE.Color(0x303932),end=new THREE.Color(0xbcc4b6);let index=0;
   tyres.name='runoff-tyre-buffers';
-  for(const barrier of layout.tyreBarriers){const points=tyreStackPositions(track,barrier);for(let i=0;i<points.length;i++){const p=points[i];object.position.set(p.x,p.y,p.z);object.updateMatrix();tyres.setMatrixAt(index,object.matrix);tyres.setColorAt(index,i<barrier.layers||i>=points.length-barrier.layers?end:black);index++;}}
-  tyres.computeBoundingSphere();tyres.userData.triangles=count*80;root.add(tyres);root.userData.tracksideSafety=layout;return layout;
+  for(const barrier of layout.tyreBarriers){const points=tyreStackPositions(track,barrier);for(let i=0;i<points.length;i++){const p=points[i];object.position.set(p.x,p.y,p.z);object.rotation.y=Math.sin(p.distance*2.17+i*1.13)*Math.PI;object.updateMatrix();tyres.setMatrixAt(index,object.matrix);tyres.setColorAt(index,i<barrier.layers||i>=points.length-barrier.layers?end:black);index++;}}
+  tyres.computeBoundingSphere();tyres.receiveShadow=true;tyres.userData.triangles=count*(tyres.geometry.index?.count??tyres.geometry.getAttribute('position').count)/3;root.add(tyres);root.userData.tracksideSafety=layout;return layout;
 }

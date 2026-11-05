@@ -30,18 +30,18 @@ export class RaceSession {
   resume(){if(this.state==='paused')this.state=this.previousState;}
   invalidate(reason:'track-limits'|'reset'='track-limits'){this.valid=false;this.invalidReason??=reason;}
   resetPosition(distance:number){this.invalidate('reset');this.lastDistance=distance;}
-  update(dt:number,distance:number,lateral:number,forward:number) {
+  update(dt:number,distance:number,lateral:number,forward:number,legalPit=false) {
     if(this.state==='countdown'){this.countdown+=dt;if(this.countdown>=4.5){this.state='racing';this.lastDistance=distance;}return;}
     if(this.state!=='racing')return;
     this.elapsed+=dt;
     const halfWidth=(this.track.widthAt?.(distance)??this.track.width)/2;
-    const beyondLimit=lateral>halfWidth+1.6;
+    const beyondLimit=!legalPit&&lateral>halfWidth+1.6;
     this.offroad=beyondLimit?this.offroad+dt:0;
     if(beyondLimit)this.totalOffroad+=dt;
     if(this.offroad>0.35||this.totalOffroad>0.65)this.invalidate();
     const len=this.track.length;
     const delta=((distance-this.lastDistance+len*1.5)%len)-len/2;
-    if(delta>0 && delta<Math.max(30,len*0.025) && forward>0.3 && lateral<halfWidth+2) {
+    if(delta>0 && delta<Math.max(30,len*0.025) && forward>0.3 && (legalPit||lateral<halfWidth+2)) {
       const target=this.nextCheckpoint===this.track.checkpoints.length?len:this.track.checkpoints[this.nextCheckpoint];
       const ahead=(target-this.lastDistance+len)%len;
       if(ahead<=delta+0.001) {

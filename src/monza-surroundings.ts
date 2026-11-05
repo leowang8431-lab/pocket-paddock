@@ -3,6 +3,9 @@ import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import type {Track} from './track';
 import {structuralRod} from './monza-details';
 import {createStandLayouts,distanceToStand} from './stand-layout';
+import {createHistoricOvalLayout,historicOvalTreeExclusion} from './monza-historic-oval';
+import {createHistoricConnectionLayout,historicConnectionContains} from './monza-historic-connection';
+import {createHistoricSouthConnectionLayout} from './monza-historic-south-connection';
 
 const MAP='https://www.monzanet.it/wp-content/uploads/2023/09/MAPPA_CIRCUITO_2023_tribune.pdf';
 const BROCHURE='https://www.monzanet.it/wp-content/uploads/2026/01/ITA2026-Experience-HU-brochure.pdf';
@@ -11,8 +14,9 @@ const PIT_MAP='https://www.fia.com/system/files/decision-document/2025_italian_g
 export interface CircuitPropLayout {
   id:string;kind:'camera-platform'|'lamp'|'marshal-equipment'|'transporter'|'food-truck'|'park-rest'|'safety-bay'|'wayfinding'|'video-screen';
   x:number;z:number;yaw:number;width:number;depth:number;reference:string;
+  cameraTarget?:{x:number;z:number};cameraDeckHeight?:number;
 }
-type PropTrack=Pick<Track,'width'|'length'|'samples'|'corners'|'sampleAt'|'nearest'|'isPitLane'>;
+type PropTrack=Pick<Track,'width'|'length'|'samples'|'corners'|'sampleAt'|'nearest'|'isPitLane'>&Partial<Pick<Track,'id'|'widthAt'>>;
 export function propFootprint(layout:CircuitPropLayout,steps=4){
   const points:{x:number;z:number}[]=[],c=Math.cos(layout.yaw),s=Math.sin(layout.yaw);
   for(let i=0;i<=steps;i++)for(let j=0;j<=steps;j++){
@@ -22,8 +26,10 @@ export function propFootprint(layout:CircuitPropLayout,steps=4){
   return points;
 }
 function clear(track:PropTrack,prop:CircuitPropLayout){
-  const stands=createStandLayouts(track);
-  return propFootprint(prop).every(p=>{const n=track.nearest(p.x,p.z);return Math.hypot(p.x-n.point.x,p.z-n.point.z)>track.width/2+2&&!track.isPitLane(p.x,p.z)&&stands.every(stand=>distanceToStand(p.x,p.z,stand)>1);});
+  const stands=createStandLayouts(track),historic=track.id==='monza'&&track.widthAt?createHistoricOvalLayout(track as Required<PropTrack>):undefined;
+  const connection=historic?createHistoricConnectionLayout(track as Required<PropTrack>):null;
+  const southConnection=historic?createHistoricSouthConnectionLayout(track as Required<PropTrack>):null;
+  return propFootprint(prop).every(p=>{const n=track.nearest(p.x,p.z);return Math.hypot(p.x-n.point.x,p.z-n.point.z)>track.width/2+2&&!track.isPitLane(p.x,p.z)&&stands.every(stand=>distanceToStand(p.x,p.z,stand)>1)&&(!historic||!historicOvalTreeExclusion(p.x,p.z,historic,2))&&[connection,southConnection].every(layout=>!historicConnectionContains(p.x,p.z,layout,2));});
 }
 
 /** Real facility types and venue relationships, scaled to the miniature.
@@ -35,7 +41,18 @@ export function createCircuitPropLayouts(track:PropTrack):CircuitPropLayout[]{
     if(!clear(track,prop))throw new Error(`Unsafe circuit prop placement: ${id}`);
     result.push(prop);
   };
-  put('camera-platform','start-line-camera',-115,110,3.7,4.4,0,PIT_MAP);
+  // These narrow broadcast bays sit on the rail-side edge of the walkway,
+  // leaving its full 3.5-unit pedestrian strip open behind the platforms.
+  // Positions are authored for the toy circuit rather than surveyed TV posts.
+  for(const [id,z,deckHeight,lead] of [
+    ['start-line-camera',110,5.2,-18],['north-braking-camera',-112,4.2,25],
+    ['straight-speed-camera',-41,5.2,-32],['centrale-camera',35,6.2,12],
+    ['south-straight-camera',157,4.7,-24],
+  ] as const){
+    const x=-111.9,near=track.nearest(x,z),aim=track.sampleAt(near.distance+lead);
+    put('camera-platform',id,x,z,3.7,4.4,0,PIT_MAP);
+    Object.assign(result.at(-1)!,{cameraTarget:{x:aim.point.x,z:aim.point.z},cameraDeckHeight:deckHeight});
+  }
   for(const z of [-98,-28,86,126])put('lamp',`straight-walkway-lamp-${z}`,-116,z,3.6,2.2,0,MAP);
   for(let i=0;i<track.corners.length;i++){
     const corner=track.corners[i],sample=track.sampleAt(corner.distance),yaw=Math.atan2(sample.tangent.x,sample.tangent.z);
@@ -92,18 +109,45 @@ export function addCircuitSurroundings(root:THREE.Group,track:Track){
       cyl(g,0,.18,0,.38,.36,0x929b91);cyl(g,0,4.3,0,.095,8.5,0x63756c);
       rod(g,[0,7.9,0],[1.0,8.5,0],.075,0x6d7c76);box(g,1.1,8.49,0,1.15,.18,.48,0x566662);box(g,1.1,8.38,0,.95,.035,.36,0xdde4cf);
     }else if(layout.kind==='camera-platform'){
-      box(g,0,.18,0,3.6,.36,4.3,0xaab2a4);
+      const deck=layout.cameraDeckHeight??5.2;
+      box(g,0,.18,0,3.6,.36,4.3,0xaab2a4).name='camera-platform-base';
       for(const x of [-1.4,1.4])for(const z of [-1.7,1.7]){
-        cyl(g,x,2.8,z,.09,5.4,0x7b8b83);rod(g,[x,.5,-1.7],[x,5.3,1.7],.045,0x929d91);
+        cyl(g,x,(deck+.4)/2,z,.09,deck+.2,0x7b8b83);rod(g,[x,.5,-1.7],[x,deck,1.7],.045,0x929d91);
       }
-      box(g,0,5.2,0,3.4,.23,4.0,0x7f8e85);
-      for(const x of [-1.6,1.6])for(const z of [-1.9,1.9])cyl(g,x,5.8,z,.035,1.2,0xa9b8aa);
-      for(const y of [5.65,6.3]){box(g,0,y,-1.9,3.3,.045,.045,0xa9b8aa);box(g,0,y,1.9,3.3,.045,.045,0xa9b8aa);}
-      for(let j=0;j<10;j++)box(g,1.5,.6+j*.48,1.8,.75,.04,.05,0xa9b8aa);
-      cyl(g,0,5.85,-.5,.08,1.2,0x253933);
-      const camera=box(g,0,6.5,-.6,.65,.56,1.15,0x2a3835);camera.rotation.y=-.6;
-      box(g,-.3,6.55,-1.2,.27,.24,.5,0x172421);box(g,.65,5.9,.1,.5,.8,.4,0x4b6962);cyl(g,.65,6.55,.1,.21,.33,0xc4b79c);
-      label('TV',g,0,5.16,-2.025,1.1,.42,new THREE.Euler(0,Math.PI,0),true);
+      box(g,0,deck,0,3.4,.23,4.0,0x7f8e85);
+      for(const x of [-1.6,1.6])for(const z of [-1.9,1.9])cyl(g,x,deck+.6,z,.035,1.2,0xa9b8aa);
+      for(const y of [deck+.45,deck+1.1]){
+        box(g,0,y,-1.9,3.3,.045,.045,0xa9b8aa);box(g,0,y,1.9,3.3,.045,.045,0xa9b8aa);
+        box(g,-1.6,y,0,.045,.045,3.8,0xa9b8aa);
+      }
+      // Ladder stays within the base footprint rather than sticking into the path.
+      for(const x of [1.1,1.7])rod(g,[x,.4,1.8],[x,deck+.35,1.8],.035,0xa9b8aa);
+      for(let y=.55;y<deck;y+=.42)box(g,1.4,y,1.8,.65,.04,.05,0xa9b8aa);
+      const target=layout.cameraTarget??track.nearest(layout.x,layout.z).point;
+      const rig=new THREE.Group();rig.name='broadcast-camera-rig';rig.position.y=deck;
+      // The optical axis is local -Z. Rotate the whole camera, tripod and
+      // operator together so the barrel visibly points at the intended asphalt.
+      rig.rotation.y=Math.atan2(layout.x-target.x,layout.z-target.z)-layout.yaw;g.add(rig);
+      for(const [x,z]of [[-.52,.42],[.52,.42],[0,-.48]])rod(rig,[x,.16,z],[0,1.11,0],.045,0x273a36).name='broadcast-tripod-leg';
+      cyl(rig,0,1.15,0,.12,.20,0x1e302c);
+      box(rig,0,1.48,-.03,.62,.48,.79,0x293d37).name='broadcast-camera-body';
+      box(rig,.34,1.47,.07,.12,.27,.31,0x65766c);
+      box(rig,0,1.51,-.57,.43,.39,.52,0x172621);
+      const barrel=cyl(rig,0,1.51,-.95,.17,.28,0x203a34,10);barrel.rotation.x=Math.PI/2;barrel.name='broadcast-camera-lens';
+      const lens=cyl(rig,0,1.51,-1.098,.135,.025,0x385d66,10);lens.rotation.x=Math.PI/2;
+      box(rig,0,1.76,-.57,.46,.06,.54,0x21352e); // Lens hood / rain shield.
+      rod(rig,[.17,1.15,.18],[.32,1.22,.57],.035,0x263b32);
+      const torso=new THREE.Mesh(new THREE.SphereGeometry(1,8,6),mat(0x426258));torso.name='broadcast-operator-torso';torso.position.set(0,.82,.87);torso.scale.set(.31,.52,.23);
+      // Operator shares the camera's yaw, with head close to the viewfinder.
+      rig.add(torso);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(.22,8,6),mat(0xc4b79c));head.position.set(0,1.53,.76);rig.add(head);
+      box(rig,0,1.68,.77,.49,.08,.46,0x253b34);
+      for(const side of [-1,1]){
+        cyl(rig,side*.23,1.53,.76,.09,.09,0x243c36,6).rotation.z=Math.PI/2;
+        rod(rig,[side*.23,1.12,.78],[side*.31,1.27,.30],.07,0x426258);
+        rod(rig,[side*.14,.40,.9],[side*.19,.15,.95],.10,0x293d34);
+      }
+      label('TV',g,0,deck-.04,-2.025,1.1,.42,new THREE.Euler(0,Math.PI,0),true);
     }else if(layout.kind==='marshal-equipment'){
       box(g,0,.12,0,3.3,.24,3.3,0x939c87);
       box(g,-.9,.62,.45,.8,.9,.75,0x30724f);box(g,-.9,1.2,.45,.9,.16,.85,0xc5cbc1);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {Track} from '../src/track.ts';
 import {VehiclePhysics,type Controls,type PhysicsTrack} from '../src/physics.ts';
+import {SPA_PIT_LAYOUT} from '../src/spa-pit-layout.ts';
 
 const spa=new Track('spa');
 const empty:Controls={throttle:false,brake:false,left:false,right:false};
@@ -36,7 +37,7 @@ test('Eau Rouge to Raidillon is a real drivable climb and the rendered asphalt f
 test('surface height interpolates road and separate pit ramps continuously without moving the old Monza floor',()=>{
  const mono=new Track();assert.equal(mono.length,1426.4443446817202);assert.equal(mono.heightAt(100,400),0);assert.equal(mono.gradeAt(200),0);assert.equal(mono.gradeAlongHeadingAt(-63,80,1),0);
  for(let d=0;d<spa.length;d+=7.9){const s=spa.sampleAt(d);if(!spa.isPitLane(s.point.x,s.point.z)){assert.ok(Math.abs(spa.heightAt(s.point.x,s.point.z)-s.point.y)<.08);const n=spa.sampleAt(d+.02);assert.ok(Math.abs(spa.heightAt(n.point.x,n.point.z)-spa.heightAt(s.point.x,s.point.z))<.02);}}
- for(const z of [50,110,170,240,270]){assert.equal(spa.isPitLane(-107,z),true);assert.ok(Math.abs(spa.heightAt(-107,z))<.1);}
+ for(const z of [100,140,180,230]){assert.equal(spa.isPitLane(SPA_PIT_LAYOUT.fastCenterX,z),true);assert.ok(Math.abs(spa.heightAt(SPA_PIT_LAYOUT.fastCenterX,z)-SPA_PIT_LAYOUT.serviceY)<.001);}
  const road=new THREE.Box3().setFromObject(spa.group.getObjectByName('spa-road')!);assert.ok(road.max.y-road.min.y>57);
 });
 

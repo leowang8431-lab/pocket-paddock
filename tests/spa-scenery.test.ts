@@ -69,7 +69,7 @@ test('actual stand mesh vertices and exterior access stay within the audited foo
 test('Spa keeps all eleven complete strategy rooms and torso/helmet staff without copying Monza-specific towers',()=>{
   assert.equal(pit.strategyPods.length,teams.length);assert.deepEqual(pit.strategyPods.map(p=>p.teamId),teams.map(t=>t.id));
   assert.deepEqual(pit.towers,[]);assert.deepEqual(pit.stairs,[]);assert.deepEqual(pit.clubs,[]);
-  assert.ok(pit.boxes.x< -120);assert.ok(Math.abs(pit.boxes.height-18.34375)<1e-8);
+  assert.ok(pit.boxes.x> -50);assert.ok(Math.abs(pit.boxes.height-18.34375)<1e-8);
   const paddock=scene.getObjectByName('spa-gp-pit-building')!;assert.ok(paddock);
   assert.equal(paddock.userData.strategyDetails.pods,11);assert.equal(paddock.userData.strategyDetails.engineers,44);assert.equal(paddock.userData.strategyDetails.mechanics,24);
   for(const support of paddock.userData.foundations){const f=pit.footprints.find(f=>f.id===support.id)!;

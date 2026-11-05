@@ -65,10 +65,10 @@ export class WeatherController {
     const object=new THREE.Object3D();
     for(let i=0;i<180;i++){
       const sample=track.sampleAt((i+.4)*track.length/180);
-      const offset=(i%2?1:-1)*(4.8+random()*1.4);
+      const offset=(i%2?1:-1)*(track.id==='monaco'?track.widthAt(sample.distance)*(.18+random()*.18):4.8+random()*1.4);
       object.position.copy(sample.point).addScaledVector(sample.right,offset);object.position.y=track.heightAt(object.position.x,object.position.z)+.059;
       object.rotation.set(-Math.PI/2,0,-Math.atan2(sample.tangent.x,sample.tangent.z));
-      if(track.id==='spa')object.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(sample.right,-Math.atan(track.gradeAt(sample.distance))));
+      if(track.id!=='monza')object.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(sample.right,-Math.atan(track.gradeAt(sample.distance))));
       object.scale.set(.2+random()*.65,1.3+random()*3.3,1);object.updateMatrix();this.wetFilm.setMatrixAt(i,object.matrix);
     }
     this.wetFilm.computeBoundingSphere();this.group.add(this.wetFilm);
@@ -87,7 +87,7 @@ export class WeatherController {
   get summary(){return{mode:this.mode,rainParticles:this.mode==='rainy'?this.rainCount:0,wetSurfaces:this.surfaces.length,elapsed:this.time};}
   setQuality(profile:QualityProfile){
     this.rainCount=profile.level==='performance'?320:profile.level==='balanced'?650:1100;
-    this.rainGeometry.setDrawRange(0,this.rainCount*2);const scale=this.track.id==='spa'?1.8:1;this.fogNear=profile.fogNear*scale;this.fogFar=profile.fogFar*scale;this.applyFog();
+    this.rainGeometry.setDrawRange(0,this.rainCount*2);const scale=this.track.id!=='monza'?1.8:1;this.fogNear=profile.fogNear*scale;this.fogFar=profile.fogFar*scale;this.applyFog();
   }
   setMode(mode:WeatherMode){
     this.mode=mode;const wet=mode==='rainy';
@@ -114,9 +114,9 @@ export class WeatherController {
     if(this.mode!=='rainy')return;
     this.time+=dt;this.skyMaterial.uniforms.clock.value=this.time;
     this.motion.set(Math.sin(heading),0,Math.cos(heading));
-    this.rain.position.copy(position);this.rain.position.y=this.track.id==='spa'?position.y-.11:0;
+    this.rain.position.copy(position);this.rain.position.y=this.track.id!=='monza'?position.y-.11:0;
     this.splashes.position.set(position.x,0,position.z);
-    if(this.track.id==='spa'){const p=this.splashes.geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,this.track.heightAt(position.x+p.getX(i),position.z+p.getZ(i))+.115);p.needsUpdate=true;}
+    if(this.track.id!=='monza'){const p=this.splashes.geometry.attributes.position;for(let i=0;i<p.count;i++)p.setY(i,this.track.heightAt(position.x+p.getX(i),position.z+p.getZ(i))+.115);p.needsUpdate=true;}
     for(let i=0;i<this.rainCount;i++){
       const k=i*4,j=i*6,fall=this.seeds[k+3];
       const y=((this.seeds[k+1]-this.time*fall)%25+25)%25;

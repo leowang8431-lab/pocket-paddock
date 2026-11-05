@@ -3,6 +3,11 @@ export type TranslationParams = Record<string, string | number>;
 export function isLanguage(value:unknown):value is Language{return value==='zh'||value==='en';}
 
 const zh={
+  'pit.panel':'维修区与轮胎','pit.current':'当前轮胎','pit.next':'下一套','pit.nextTyres':'下一套轮胎','pit.limit':'维修区限速120公里每小时','pit.progress':'换胎进度',
+  'pit.status.idle':'手动驾驶','pit.status.approach':'电脑接管 · 前往车位','pit.status.service':'正在换胎','pit.status.exit':'手动驶出','pit.status.limited':'手动驾驶 · 维修区限速',
+  'pit.help.idle':'驶入入口道路任意位置即接管，并自动停车','pit.help.approach':'120 km/h 上限 · 自动驶向你的 P 房','pit.help.service':'换胎完成即交还油门、制动和方向控制','pit.help.exit':'请自行驶出 · 维修区内限速 120 km/h，出站解除',
+  'pit.compound.soft':'软胎 · S','pit.compound.medium':'中性胎 · M','pit.compound.hard':'硬胎 · H','pit.compound.wet':'雨胎 · W',
+  'pit.remaining':'换胎剩余','pit.target':'本次 {seconds}s','pit.completed':'已换胎 {count} 次',
   'camera.short':'视角','camera.title':'驾驶视角','camera.close':'近距','camera.standard':'标准','camera.far':'远距','camera.help':'C 切换视角',
   'showcase.aria':'赛车展示','showcase.views':'展示角度','showcase.front':'前侧','showcase.side':'侧面','showcase.rear':'车尾','showcase.note':'挑选车手，查看车身与头盔细节',
   'hero.weather':'晴雨切换','hero.controls':'键盘 / 手柄','hero.modes':'单人 / 人机','engine.up':'↑ 升档','engine.down':'↓ 补油',
@@ -17,11 +22,11 @@ const zh={
   'weather.help':'在围场或暂停时切换天气；切换后重新计时，晴雨成绩分开保存。',
   'weather.locked':'请先暂停再切换天气。切换后重新计时，晴雨成绩分开保存。',
   'weather.note':'切换天气重新计时 · 晴雨成绩分开保存',
-  'sound.on':'声音 开','sound.off':'声音 关','sound.enable':'开启引擎声音','sound.disable':'关闭引擎声音',
+  'sound.on':'声音 开','sound.off':'声音 关','sound.enable':'开启游戏声音','sound.disable':'关闭游戏声音',
   'hero.small':'下一圈，','hero.large':'由你领跑。','hero.line1':'选一支车队，找到你的节奏。',
   'hero.line2':'在蒙扎，把每一个弯变成优势。',
   'track.name':'蒙扎','track.location':'意大利 · 艺术化短赛道','caption':'小比例，大热爱。',
-  'garage.aria':'车队与车手设置','garage.version':'围场车库 / 12','garage.title':'准备你的发车阵容。',
+  'garage.aria':'车队与车手设置','garage.version':'围场车库 / 13','garage.title':'准备你的发车阵容。',
   'garage.subtitle':'11 支车队 · 22 位车手','garage.team':'选择车队','garage.driver':'选择车手',
   'race.mode':'比赛模式','race.mode.tt':'单人计时挑战','race.mode.ai':'人机竞速 · 3 圈 · 5 AI',
   'race.note.tt':'独自练习走线 · 挑战个人最佳','race.note.ai':'六车同场 · 三圈决胜 · 竞速圈速不计入计时榜',
@@ -73,6 +78,11 @@ const zh={
 } as const;
 export type TranslationKey=keyof typeof zh;
 const en:Record<TranslationKey,string>={
+  'pit.panel':'Pit lane and tires','pit.current':'Fitted','pit.next':'Next set','pit.nextTyres':'Next tire set','pit.limit':'Pit-lane speed limit: 120 kilometers per hour','pit.progress':'Tire change progress',
+  'pit.status.idle':'Manual driving','pit.status.approach':'Computer control · To your box','pit.status.service':'Changing tires','pit.status.exit':'Manual pit exit','pit.status.limited':'Manual driving · Pit limiter',
+  'pit.help.idle':'Enter anywhere across the pit-entry road for assisted parking','pit.help.approach':'120 km/h maximum · Driving to your team garage','pit.help.service':'Throttle, braking and steering return as soon as service ends','pit.help.exit':'Drive out manually · 120 km/h limiter stays on until the pit exit',
+  'pit.compound.soft':'Soft · S','pit.compound.medium':'Medium · M','pit.compound.hard':'Hard · H','pit.compound.wet':'Wet · W',
+  'pit.remaining':'Time remaining','pit.target':'This stop {seconds}s','pit.completed':'Stops completed: {count}',
   'camera.short':'Camera','camera.title':'Driving camera','camera.close':'Close','camera.standard':'Standard','camera.far':'Far','camera.help':'C changes camera',
   'showcase.aria':'Car showcase','showcase.views':'Showcase angle','showcase.front':'Front','showcase.side':'Side','showcase.rear':'Rear','showcase.note':'Choose a driver. Explore your car and helmet.',
   'hero.weather':'Sun & rain','hero.controls':'Keyboard / controller','hero.modes':'Solo / AI racing','engine.up':'↑ UPSHIFT','engine.down':'↓ REV MATCH',
@@ -88,11 +98,11 @@ const en:Record<TranslationKey,string>={
   'weather.help':'Change weather in the garage or while paused. Your attempt restarts; dry and wet records are saved separately.',
   'weather.locked':'Pause to change weather. Your attempt restarts; dry and wet records are saved separately.',
   'weather.note':'Weather changes restart timing · Separate dry / wet bests',
-  'sound.on':'Sound On','sound.off':'Sound Off','sound.enable':'Enable engine sound','sound.disable':'Disable engine sound',
+  'sound.on':'Sound On','sound.off':'Sound Off','sound.enable':'Enable game sound','sound.disable':'Disable game sound',
   'hero.small':'Your next lap.','hero.large':'Your own line.','hero.line1':'Choose your team. Find your rhythm.',
   'hero.line2':'Turn every corner into your advantage.',
   'track.name':'Monza','track.location':'Italy · Miniature circuit','caption':'Small scale. Full heart.',
-  'garage.aria':'Team and driver settings','garage.version':'PADDOCK GARAGE / 12','garage.title':'Prepare your starting grid.',
+  'garage.aria':'Team and driver settings','garage.version':'PADDOCK GARAGE / 13','garage.title':'Prepare your starting grid.',
   'garage.subtitle':'11 teams · 22 drivers','garage.team':'Choose your team','garage.driver':'Choose your driver',
   'race.mode':'Race mode','race.mode.tt':'Solo time trial','race.mode.ai':'Race AI · 3 laps · 5 rivals',
   'race.note.tt':'Practise your line · Chase your personal best','race.note.ai':'Six cars · Three laps · Race laps stay off the time-trial board',
@@ -147,9 +157,11 @@ export function t(language:Language,key:TranslationKey,params:TranslationParams=
   return translations[language][key].replace(/\{(\w+)\}/g,(match,name)=>String(params[name]??match));
 }
 export function localizedCorner(name:string,language:Language):string{
-  const value=name.toLowerCase();
-  const spaNames=['la source','eau rouge','raidillon','kemmel','les combes','malmedy','bruxelles','no name','pouhon','fagnes','stavelot','paul frère','blanchimont','bus stop'];
-  if(spaNames.some(corner=>value.startsWith(corner)))return language==='zh'?name:name.split('·')[0].trim();
-  const key:TranslationKey=value.includes('rettifilo')?'corner.rettifilo':value.includes('biassono')?'corner.biassono':value.includes('roggia')?'corner.roggia':value.includes('lesmo 1')?'corner.lesmo1':value.includes('lesmo 2')?'corner.lesmo2':value.includes('serraglio')?'corner.serraglio':value.includes('ascari')?'corner.ascari':value.includes('alboreto')||value.includes('parabolica')?'corner.alboreto':'corner.start';
-  return t(language,key);
+  const value=name.trim().toLowerCase();
+  const key:TranslationKey|undefined=value.includes('rettifilo')?'corner.rettifilo':value.includes('biassono')?'corner.biassono':value.includes('roggia')?'corner.roggia':value.includes('lesmo 1')?'corner.lesmo1':value.includes('lesmo 2')?'corner.lesmo2':value.includes('serraglio')?'corner.serraglio':value.includes('ascari')?'corner.ascari':value.includes('alboreto')||value.includes('parabolica')?'corner.alboreto':undefined;
+  if(key)return t(language,key);
+  if(!value||value.startsWith('start')||value.startsWith('起终点'))return t(language,'corner.start');
+  // New circuits supply their own English / Chinese corner labels. Preserve
+  // those labels instead of silently calling every unknown bend the straight.
+  return language==='en'?name.split('·')[0].trim():name;
 }

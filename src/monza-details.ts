@@ -17,13 +17,26 @@ export function asphaltTexture():THREE.CanvasTexture|undefined {
 export function catchFenceMaterial():THREE.MeshBasicMaterial {
   let texture:THREE.CanvasTexture|undefined;
   if(typeof document!=='undefined'){
-    const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
-    const ctx=canvas.getContext('2d')!;ctx.strokeStyle='#cad0ce';ctx.lineWidth=1.8;
-    for(let x=-128;x<=256;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+128,128);ctx.stroke();ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x-128,128);ctx.stroke();}
+    // Keep the same physical mesh pitch and wire width. A larger source tile
+    // improves the close-up diagonals without making the fence more opaque.
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
+    const ctx=canvas.getContext('2d')!;
+    // A one-step alpha floor retains white RGB in transparent texels through
+    // canvas/PNG export. Filtering against black RGB otherwise darkens every
+    // subpixel wire into a dirty screen. The .005 cutoff removes this floor
+    // at native resolution; exported BLEND adds less than 0.4% opacity.
+    ctx.fillStyle='rgba(255,255,255,0.00392156862745)';ctx.fillRect(0,0,256,256);
+    ctx.strokeStyle='#ffffff';ctx.lineWidth=3.6;
+    for(let x=-256;x<=512;x+=64){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x+256,256);ctx.stroke();ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x-256,256);ctx.stroke();}
     texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
-    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(4,3);texture.anisotropy=4;
+    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(4,3);texture.anisotropy=8;
+    texture.minFilter=THREE.LinearMipmapLinearFilter;texture.magFilter=THREE.LinearFilter;
   }
-  const mat=new THREE.MeshBasicMaterial({color:0xb8c1bf,map:texture??null,alphaTest:.37,side:THREE.DoubleSide,alphaToCoverage:true});
+  // Minified fine wire covers only ~15% of a mip texel. A .37 opaque alpha
+  // cutoff erased that complete texel, leaving dots and then no fence. Alpha
+  // blending preserves fractional coverage when the diamonds become subpixel.
+  // It also survives standard glTF export as BLEND; no custom runtime shader.
+  const mat=new THREE.MeshBasicMaterial({color:0xb8c1bf,map:texture??null,transparent:true,alphaTest:.005,depthWrite:false,side:THREE.DoubleSide,forceSinglePass:true});
   mat.name='galvanised-catch-fence';return mat;
 }
 

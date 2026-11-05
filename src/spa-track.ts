@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {asphaltTexture,catchFenceMaterial} from './monza-details';
 import type {Track,TrackSample} from './track';
+import {buildSpaPitSurfaces,trimSpaPitGround} from './spa-pit-surfaces';
 
 /** Horizontal plan from Tomislav Bacinger's f1-circuits, MIT.
  * https://github.com/bacinger/f1-circuits/blob/master/circuits/be-1925.geojson
@@ -89,11 +90,20 @@ export function buildSpaTrack(track:Track,pitPoints:readonly THREE.Vector3[]){
    const s=track.samples[i%track.samples.length],ground=raise<.03;
    for(const offset of offsets){const a=offsetAt(s,offset),x=s.point.x+s.right.x*a,z=s.point.z+s.right.z*a;p.push(x,(ground?Math.min(s.point.y,track.heightAt(x,z)):s.point.y)+raise,z);}
    if(i<track.samples.length&&(!filter||filter(s)))for(let j=0;j<columns-1;j++){const k=i*columns+j;indices.push(k,k+1,k+columns,k+1,k+columns+1,k+columns);}
-  }return meshFrom(p,indices,material,name);
+  }
+  // Broad verges can pinch on the inside of a tight corner. Drop the zero-
+  // width / folded cells instead of turning them into spikes, and give every
+  // retained road or ground triangle a genuine upward-facing winding.
+  const up:number[]=[];
+  for(let i=0;i<indices.length;i+=3){
+   const a=indices[i],b=indices[i+1],c=indices[i+2],area=(p[b*3+2]-p[a*3+2])*(p[c*3]-p[a*3])-(p[b*3]-p[a*3])*(p[c*3+2]-p[a*3+2]);
+   if(area< -1e-7)up.push(a,c,b);
+  }
+  return meshFrom(p,up,material,name);
  };
  ribbon(-27,27,-.25,mat(0x66895a),'spa-road-earth-bed');
  ribbon(-23,-11,.018,mat(0xbdb28f),'spa-gravel-left',s=>isSpaGravel(s.distance,track.length));ribbon(11,23,.018,mat(0xbdb28f),'spa-gravel-right',s=>isSpaGravel(s.distance,track.length));
- ribbon(-half-.15,half+.15,.045,asphalt,'spa-road');ribbon(-half,-half+.18,.057,mat(0xe8e8da),'spa-left-edge');ribbon(half-.18,half,.057,mat(0xe8e8da),'spa-right-edge');
+ const roadSurface=ribbon(-half-.15,half+.15,.045,asphalt,'spa-road');ribbon(-half,-half+.18,.057,mat(0xe8e8da),'spa-left-edge');ribbon(half-.18,half,.057,mat(0xe8e8da),'spa-right-edge');
  for(const side of [-1,1]){
   for(let color=0;color<2;color++)ribbon(side*(half+.25),side*(half+1.1),.082,mat(color?0xd8b83b:0xc33c32),`spa-red-yellow-kerb-${side}-${color}`,s=>Math.floor(s.distance/3.2)%2===color);
   ribbon(side*(half+1.1),side*(half+1.9),.035,mat(0x527e50),`spa-kerb-shoulder-${side}`);
@@ -114,9 +124,7 @@ export function buildSpaTrack(track:Track,pitPoints:readonly THREE.Vector3[]){
   o.position.set(x,s.point.y+3.15,z);o.rotation.set(0,yaw,pitch);o.updateMatrix();fence.setMatrixAt(used,o.matrix);used++;
  }
  post.name='spa-catch-fence-posts';fence.name='spa-catch-fence-mesh';post.count=fence.count=used;post.computeBoundingSphere();fence.computeBoundingSphere();root.add(post,fence);
- const pit=asphalt.clone();pit.name='spa-pit-asphalt';pit.userData.weatherSurface='road';const pp:number[]=[],pi:number[]=[];
- for(let i=0;i<pitPoints.length;i++){const p=pitPoints[i],a=pitPoints[Math.max(0,i-1)],b=pitPoints[Math.min(pitPoints.length-1,i+1)],n=new THREE.Vector3(b.z-a.z,0,a.x-b.x).normalize();for(const side of [-1,1])pp.push(p.x+n.x*6*side,p.y+.052,p.z+n.z*6*side);if(i<pitPoints.length-1){const k=i*2;pi.push(k,k+1,k+2,k+1,k+3,k+2);}}
- meshFrom(pp,pi,pit,'spa-pit-lane');
+ const pitSurfaces=buildSpaPitSurfaces(roadSurface,pitPoints);root.add(pitSurfaces);
  // Start/finish and grid are perpendicular to the real start tangent.
  const s=track.sampleAt(0),yaw=Math.atan2(s.tangent.x,s.tangent.z);
  for(let x=0;x<track.width;x++)for(let z=0;z<2;z++){const m=new THREE.Mesh(new THREE.BoxGeometry(1,.018,1),mat((x+z)%2?0xecebdc:0x273f35));m.position.copy(s.point).addScaledVector(s.right,x-(track.width-1)/2).addScaledVector(s.tangent,z-.5);m.position.y+=.089;m.rotation.y=yaw;root.add(m);}
@@ -133,7 +141,8 @@ export function buildSpaTrack(track:Track,pitPoints:readonly THREE.Vector3[]){
  };
  for(let i=0;i<indices.length;i+=3)if(clearGroundTriangle(indices[i],indices[i+1],indices[i+2]))outside.push(indices[i],indices[i+1],indices[i+2]);
  meshFrom(p,outside,mat(0x77925f),'spa-rolling-terrain');
- root.userData.spa={reference:SPA_REFERENCE,planReference:SPA_GEOJSON_REFERENCE,realLengthMetres:SPA_REAL_LENGTH,metresPerUnit:SPA_METRES_PER_UNIT,elevationReferenceMetres:418,road:'3D ribbon and kerbs share centreline elevation',artistic:'Horizontal GeoJSON adapted to game scale; La Source and Bus Stop locally rounded to suit the unchanged vehicle wheelbase. Interpolated public elevation stations, simplified runoffs and furniture. Not a survey or engineering model.'};
+ trimSpaPitGround(root,pitSurfaces);
+ root.userData.spa={reference:SPA_REFERENCE,planReference:SPA_GEOJSON_REFERENCE,realLengthMetres:SPA_REAL_LENGTH,metresPerUnit:SPA_METRES_PER_UNIT,elevationReferenceMetres:418,road:'3D ribbon, kerbs, physics and wheel-contact pitch share the periodic spatially smoothed elevation profile',elevationSmoothing:{sigmaUnits:5,startHeight:0,horizontalPlanUnchanged:true},pitProfile:track.spaPitProfile,artistic:'Horizontal GeoJSON adapted to game scale; La Source and Bus Stop locally rounded to suit the unchanged vehicle wheelbase. Interpolated public elevation stations, simplified runoffs and furniture. Not a survey or engineering model.'};
  root.userData.safetyFurniture={armcoRails:3,offset:24,pitJoinsKeptClear:true};
 }
 export function isSpaGravel(distance:number,length:number){const t=distance/length;return(t>.025&&t<.05)||(t>.125&&t<.18)||(t>.30&&t<.36)||(t>.41&&t<.46)||(t>.57&&t<.65)||(t>.91&&t<.96);}
