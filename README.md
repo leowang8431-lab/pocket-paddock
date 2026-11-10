@@ -1,5 +1,222 @@
 # Pocket Paddock · 口袋围场
 
+[English](#english) · [简体中文](#简体中文)
+
+## English
+
+**0.15 · Playable Monaco and three-circuit racing.** Pocket Paddock is a chibi-style formula racing game built with Three.js, TypeScript, and Vite. Drive at Monza, Spa-Francorchamps, and Monaco in solo time trials or three-lap races against AI. Choose from 11 teams and 22 drivers, race in sunshine or rain, and play in English or Chinese with a keyboard or a standard-mapped gamepad.
+
+[Getting started](#getting-started) · [Changelog](CHANGELOG.md) · [Project submission and images](docs/SUBMISSION.md) · [Play online](https://pocket-paddock-monza.leowang8431.chatgpt.site/)
+
+![Pocket Paddock gameplay cover](docs/submission-assets/cover.png)
+
+AI tools assisted development, and playtesting feedback guided changes to gameplay, models, interface, and performance. Car, helmet, and audio assets ship with the project. Install development dependencies with `npm ci`. All models, audio, and fonts used at runtime are available locally. When you play online, your browser renders the 3D scene on your device. Frame rate depends on the GPU, drivers, hardware acceleration, resolution, and quality settings. Hosting mainly affects access and loading times.
+
+### Monaco Racing · 0.15
+
+The 19-turn street circuit supports time trials and three-lap AI races with the same 11 teams, 22 drivers, weather modes, languages, and keyboard and gamepad support. Drivers must pass all 24 checkpoints in order. Monaco has separate dry and wet lap records alongside the four existing Monza and Spa leaderboards.
+
+The driving scene scales the review model by 3.2 so the existing cars fit the streets. The relative placement of the buildings, harbor, 36 boats, 110 trees, nine grandstands, garages, and strategy booths is preserved. Monaco uses a circuit-specific steering rack to navigate the tightest hairpin at low speed. Available steering angle decreases at higher speeds, and tire grip still limits cornering. Monza and Spa retain their handling settings. AI drivers merge into single file before narrow bends and can run side by side on wide straights.
+
+Collision boundaries follow the geometry of angled walls and buildings, with openings for garage entrances and the tunnel. Enter the pit lane manually to trigger the 120 km/h limiter, assisted parking, and a randomized 2–4 second tire change with a 16-person crew. Manual control returns immediately after the tire change, with the speed limit still active in the pit lane. The circuit is a stylized miniature. Speeds, lap times, and buildings are adapted for arcade gameplay.
+
+Monaco has one DRS zone based on the 2025 circuit map. The game closes DRS before Turn 1 to leave room for braking. Braking or rain also closes DRS automatically. AI drivers currently keep DRS closed. [FIA 2025 Monaco circuit map](https://www.fia.com/system/files/decision-document/2025_monaco_grand_prix_-_race_directors_event_notes_-_circuit_map_pit_lane_map_ers_battery_containment_area_red_zones.pdf)
+
+### Spa Gradients and Pit Lane · 0.14
+
+The road mesh, continuous elevation, gradients, and vehicle ground contact use the same elevation profile. This removes pitch jumps caused by switching between nearby elevation samples. The original layout, the Eau Rouge and Raidillon climb, and the elevation changes around the lap are preserved. The fix applies to the road geometry and the driving model.
+
+The rebuilt pit lane has a 12-unit fast lane, a 2-unit blue-green divider, and a gray working area. The meshes are cut to meet the main circuit without overlapping, and the rounded entry has a continuous shape. Following the FIA circuit map, the pit exit goes around La Source before merging. All 11 garages have three walls, door frames, interior lights, and tools, with a strategy room and computers for every team. Static crew stand inside the garages to leave room for the 16-person pit stop and the parked car. A longer approach lets the car gradually move sideways into its assigned bay. Monza retains its existing driving route.
+
+Monaco also has a separate circuit preview. V1.4 completes the side walls of all eight garages and adds 16 telemetry displays, keyboards, seats, and crew figures with torsos and helmets. It adds a close-up camera for the strategy desk. The architecture and workstations are stylized miniature models.
+
+### Assisted Pit Stops
+
+Choose the next set of tires (S/M/H/W) in the garage menu or on the driving HUD, then drive into the pit entry. At Monza, the assist activates across the full entry road beyond the kerb and the approach straight before the garages. Simply drive into that area. The main racing surface, white lines, and red-and-white kerbs lie outside the trigger. The game limits the car to **120 km/h**, drives to the assigned team garage, and changes tires with a 16-person crew. The former PIT 70 pavement marking has been removed. A valid entry draws one stop time between 2 and 4 seconds. Pausing freezes that time and preserves the draw. Steering, throttle, and braking return to the player as soon as the tire change ends. The 120 km/h limiter applies throughout the pit road and work area and releases when you exit.
+
+Monza and Spa have fixed garages for all 11 teams. Monaco has eight reviewed garages. Selecting Audi, Cadillac, or Racing Bulls assigns the team to the eighth bay and updates the garage signage, the strategy booth on the right, and the crew colors. The race clock and AI keep running during pit stops. A valid pit entry still advances the ordered checkpoints and start/finish timing without a track-cut penalty. Pressing R aborts the stop and returns the car to the circuit. Tires are fitted only when service finishes. Restarting clears the assist and the random stop time. Pause and reset remain available while the assist controls driving.
+
+The tire selection updates after service, and the square letter markings have been removed from the sidewalls. Tire wear, compound-specific performance, mandatory stops, and AI pit strategy are planned for future releases. Players can choose when to pit during the three-lap race. The 120 km/h limit is an arcade setting requested by the player. The global Sound button controls engine and pit tool audio.
+
+`src/pit-lane-controller.ts` handles entry detection, assisted driving, the speed limiter, and the stop-time draw. `src/pit-service-view.ts` plays the approved animation at the real in-game bay, then releases the crew and restores the car's wheel meshes after completion or cancellation. `src/pit-stop-audio.ts` retimes the sound effects to the drawn duration while preserving the recording pitch at normal playback speed. The standalone model preview remains available.
+
+Start Vite and run `node scripts/check-pit-game.mjs` to verify the pit flow. Other checks include `npm test` and `node scripts/check-offline.mjs`. The browser report distinguishes keyboard driving from the grid and test setups that position the car just before the pit entry.
+
+### Pit Stop Animation Preview · V5
+
+The standalone model and motion preview uses a fixed 2.6-second stop. In the game, each stop takes a randomly selected 2–4 seconds. [Open the standalone pit stop preview](https://pocket-paddock-monza.leowang8431.chatgpt.site/pit-stop.html?v=5)
+
+The car is parked with its sidepod facing the garage. The scene retains 16 crew members in distinct roles, oval torsos and small S/M/H/W tire labels. V3 made the torsos wider and deeper. Tire carriers now work close to the wheels, wheel-gun operators stay near the actual grips and step aside with their tools during the handover, and jack operators work close to the jack handles. The simplified crew models retain their limbless silhouettes.
+
+In V5, all four tires are changed in parallel in 2.6 seconds from standstill to release. For review, the sequence takes 5.2 seconds at 0.5× and 10.4 seconds at 0.25×. The updated timing allows more time for wheel-gun contact. Crossfades join recorded mechanical impact clips into a continuous sound while the tools are in use. Normal playback preserves the recording pitch.
+
+An independent cantilever stand holds the double-sided red and green release light above the front of the car. A side post supports the stand, which stays fixed throughout the animation. The light turns green after the car is back on the ground, the wheels are tightened and the crew has cleared the car. The signal lives in `src/pit-stop-release-signal.ts` and is independent of the jack and crew models.
+
+Recorded wheel-gun sounds, metal movement Foley and rubber contact Foley are synchronized with the staggered actions at all four wheels. Playback has mute and volume controls. Audio goes silent during pauses and timeline scrubbing. It resumes from the matching point in the animation when playback continues, restarts, loops or changes speed. The first Play click enables browser audio, and the default 1× speed preserves the recording pitch. The mix is limited to those effects, with wind noise, crowd sounds and electronic cues left out. The preview's Sound Sources section and `THIRD_PARTY_NOTICES.txt` document the sources and licences. The credits describe recorded mechanical effects and Foley, with F1 team provenance unspecified.
+
+The 2.6-second stop supports 11 teams, four replacement tire compounds, five camera angles, 0.25×, 0.5× and 1× playback, looping and free timeline scrubbing. The front jack moves sideways to clear the driving line. Separate crew members handle the used tires and their replacements. The game's original wheels, liveries and geometry assets remain separate.
+
+Run `npm run dev` and open `/pit-stop.html` for development. `npm run build` builds the game and the standalone `dist/pit-stop.html` preview. The race displays a single pit crew during the player's tire change. `npm run build:pit-preview` generates `outputs/Pocket-Paddock-Pit-Stop-Preview-V5.html`, which opens directly in Chrome or Edge for offline review.
+
+`PitStopAnimation.setTime(seconds)` determines the pose, so scrubbing backwards produces consistent poses without accumulating drift. The animation is in `src/pit-stop-animation.ts`, the studio scene in `src/pit-stop-stage.ts`, the interface in `src/pit-stop-preview.ts`, real-time timing and pose mapping in `src/pit-stop-timing.ts`, and audio in `src/pit-stop-audio.ts`. `node scripts/check-pit-stop-audio.mjs` verifies actual Web Audio output, pausing, playback speed changes, muting and animation fallback when audio is unavailable. `npm run test:pit-preview` runs the checks in Chrome. Optional video recording requires Playwright's FFmpeg setup for development.
+
+### Getting Started
+
+Use Node.js 20.19+ or 22.12+ and desktop Chrome or Edge with hardware acceleration enabled.
+
+```sh
+npm ci
+npm run dev
+```
+
+Open the address shown in the terminal. To test, build and preview the production version, run the following commands.
+
+```sh
+npm test
+npm run build
+npm run preview
+```
+
+`npm run build:offline` uses the version from `package.json` to generate `outputs/Pocket-Paddock-Offline-0.15.0.html`. This HTML bundles the scripts, styles, models and pit stop audio, and runs directly in Chrome or Edge without Node.js, a server, a network connection or a VPN. Extract it first and open it directly in your browser outside WeChat's file preview. Frame rates vary by device. Start with the Auto graphics setting.
+
+For `file://` sessions, saved times and settings depend on the browser, the file location, browser data clearing and storage permissions. The offline build and the website use separate records. The game remains playable when storage is unavailable.
+
+Direct access from mainland China can be unreliable without a VPN. Public hosting migration is on hold at the user's request. `deployment/` contains preparation files for deployment. [Play Pocket Paddock online](https://pocket-paddock-monza.leowang8431.chatgpt.site/)
+
+### In This Release
+
+- Choose **Monza / Spa / Monaco** from the menu. All teams, weather settings, languages, camera options and race modes are available across the three circuits. Circuit changes are available only in the paddock and reload the scene.
+- Monza retains its original layout and handling, with Roggia and Lesmo 2 narrowed by 5% in selected sections. The grandstands expand from 7 to **21, with 6,184 spectators**. The original seven keep their positions and orientations. The fourteen additions were checked for clearance from the circuit, pit area and roofs, and conflicting trees were relocated.
+- Spa is a complete standalone circuit. The 7,004-metre reference layout is scaled to **4,202.4 game units**. Eau Rouge and Raidillon feature a drivable climb, and elevation varies elsewhere too. Gradients affect acceleration. Cars, AI rivals, cameras, kerbs and wet-weather effects follow the terrain.
+- Spa's signature grandstand takes its cues from official imagery, with 40 rows, 4,600 seating positions, a large grey canopy, a glazed hospitality area underneath and external switchback stairs. The circuit has **21 grandstands, 9,766 spectators and 1,800 trees of mixed species**. The other twenty stands are game facilities with counts and locations chosen for the project.
+- Monza and Spa retain fully equipped strategy booths for all 11 teams, 68 simplified staff figures, pit area details and a **RIOLEX** clock. Spa has its own GP building design. The twin towers and Fans Club are specific to Monza. Monaco retains eight reviewed garages and updates the garage signage and assignment to match the selected team.
+- Separate records for **three circuits × dry and wet weather** give six leaderboards. Each circuit and weather combination saves independently. Race mode keeps its results separate from the time-trial boards.
+- The engine continues to use the recorded CC0 mechanical cycle waveforms from 0.11, with the random noise and air layers removed. Upshift fuel cuts, downshift throttle blips and launch load share the eight-speed engine RPM state.
+
+### Controls
+
+| Action | Keyboard | Xbox / PlayStation standard mapping |
+| --- | --- | --- |
+| Throttle / brake and reverse | W / ↑, S / ↓ | RT / R2, LT / L2 |
+| Steering | A D / ← → | Left stick |
+| Return to track | R | Y / △ |
+| DRS | F | X / □ |
+| Close / standard / far camera | C | R3 |
+| Pause / resume | Esc | Menu / Options |
+| Start / race again | Enter or on-screen button | A / × |
+| Return to the paddock | On-screen button | B / ○ |
+
+Press a button after connecting the controller so the browser can recognize it. The game supports the `standard` mapping with analogue sticks and triggers. Disconnecting a controller pauses the game. After reconnecting, release the action buttons before pressing them again. Controller verification to date uses the simulated Gamepad API. Physical testing by controller model is pending.
+
+Brake in a straight line, ease off as you turn in and accelerate as you unwind the steering. Wet conditions reduce grip and extend braking distances. Grass and gravel slow the car, and staying outside track limits invalidates the current lap. A lap counts after a forward pass through the checkpoints in sequence. Resetting the car invalidates the current lap.
+
+### Racing and DRS
+
+Time trial includes a five-light countdown, speed, gear and RPM readouts, current and best lap times, checkpoints and local storage. An AI race has six cars over three laps. The player starts P3. AI rivals brake for corner curvature, change lanes and take evasive action during contact. The player and AI use the same optimized GLB at about **27,540 triangles per car**. Shared geometry and instanced drawing reduce the cost of rendering rivals.
+
+The scope of this arcade build excludes qualifying, tire wear, damage, AI pit strategy, formal flag rules and time penalties. AI pace is independent of the player's speed, and AI rivals keep DRS closed.
+
+Classic manual DRS uses the **FIA 2025** maps as its reference. The 2026 regulations are outside the scope of this reference. In dry weather, open DRS manually on a designated straight once the car is moving forward, above the minimum speed and clear of the pit lane. Braking, leaving the road, a collision, reversing or leaving the zone closes DRS automatically. DRS is disabled in the rain and must be reopened in each zone. Availability is independent of the one-second gap rule for the car ahead.
+
+| Circuit | Real detection / activation reference | In-game mapping |
+| --- | --- | --- |
+| Monza 1 | 95 m before T7 / 170 m after T7 | From the Lesmo 2 exit to before Ascari |
+| Monza 2 | 20 m after T11 / 12 m after the finish line | From the main straight to before the first chicane |
+| Spa 1 | 240 m before T2 / 305 m after T4 | From Kemmel to before Les Combes |
+| Spa 2 | 160 m before T18 / 30 m after T19 | From the GP main straight to before La Source |
+| Monaco | 80 m after T16 / 18 m after T19 | Across the start and finish line on the main straight, closing before the T1 braking zone |
+
+Real-world distances are scaled by the length ratio for each circuit. Corner exits use in-game centerline anchors, and DRS closes at the game's braking zones. Spa's T19 exit uses an artistic placement about 55 metres beyond the Bus Stop anchor. Its coordinates are approximate.
+
+### Real-world references and artistic adaptation
+
+#### Monza
+
+The pit buildings and grandstands occupy opposite sides of the main straight, and the pit lane and paddock facilities follow the broad arrangement shown in the references. The freestanding TOWER buildings and the curved Fans Club retain their distinct forms. [Official grandstand map](https://www.monzanet.it/wp-content/uploads/2023/09/MAPPA_CIRCUITO_2023_tribune.pdf), [official 2026 GP Hospitality brochure](https://www.monzanet.it/wp-content/uploads/2025/11/Brochure_Hospitality_GPf12026.pdf), [FIA 2025 Italian Grand Prix circuit map](https://www.fia.com/system/files/decision-document/2025_italian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exit_map_quarantine_zone_and_red_zones.pdf).
+
+Building and grandstand sizes, garage counts, distances, decorative details, and additional stands were adapted to the shorter circuit and rearranged to fit the scene. Monza House and Ultimate Hospitality draw on the official hospitality brochure above. Cascina Costa Alta and the Serraglio gatehouse serve as recognizable park landmarks, with approximate dimensions, placement, and in-game sightlines. [Official Reggia di Monza architecture guide](https://reggiadimonza.it/architetture/).
+
+Broad-canopied and columnar trees help capture the character of the park. The cranes and ambulances behind the barriers and the tire walls in gravel areas are static scenery, with artistic choices for vehicle types, quantities, and parking locations. [Official park nature guide](https://reggiadimonza.it/natura/).
+
+#### Spa-Francorchamps
+
+The circuit plan comes from Tomislav Bacinger’s `f1-circuits` project, with its MIT license documented in `THIRD_PARTY_NOTICES.txt`. Elevations are interpolated between published reference points. [f1-circuits GeoJSON](https://github.com/bacinger/f1-circuits/blob/master/circuits/be-1925.geojson), [official circuit venue guide](https://www.spa-francorchamps.be/sites/default/files/pdf/en/SF_access-organiser.pdf).
+
+The Raidillon grandstand draws on the circuit’s 2022 infrastructure announcement and venue rental gallery. The DRS zones follow the FIA’s 2025 Belgian Grand Prix circuit map. [Official infrastructure announcement](https://www.spa-francorchamps.be/en/news/262_inauguration-of-the-new-infrastructure-of-the-circuit-of-spa-francorchamps), [official venue rental gallery](https://www.spa-francorchamps.be/en/evenement-locationdesalles), [FIA circuit map](https://www.fia.com/system/files/decision-document/2025_belgian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exits_quarantine_zone_and_red_zones.pdf).
+
+The road and elevation profiles share one model, with simplified terrain, barriers, pit lanes, and buildings. La Source and the Bus Stop were rounded locally to accommodate the toy cars’ steering radius while retaining the recognizable hairpin and double bend and the full circuit’s length proportions. The pit entry branches to the driver’s right between Turns 18 and 19 at the Bus Stop. The main service area is level. The exit curves smoothly around the inside of La Source and rejoins the main track after the corner. A continuous periodic curve smooths elevation across the lap, and the road geometry and wheel contact use the same height data.
+
+**The buildings are miniature interpretations based on photographs.** Grandstand outlines, seating capacity, and hospitality levels draw on those references. Dimensions, the placement of other stands, and the forest layout were estimated for the miniature scene using the available material, which lacked architectural CAD and on-site measurements.
+
+#### Cars, pit walls, and audio
+
+The cars and helmets come from user-supplied GLB, OBJ, MTL, and CSV files. Meshes and materials were consolidated and optimized for runtime use. Driver years, rosters, and liveries follow the supplied asset data. Unverified patterns are treated as interpretations, and the supplied assets came without separate license documentation. Any additional permissions come from the original rights holders.
+
+Each team has a pit-wall room with four engineers, eight screens, and its own team-color markings. The twelve garage bays also have monitors, keyboards, tools, tire carts, booms, and hoses. The 68 strategy and pit crew figures use torsos, team-colored helmets, and dark visors. Engineers also wear headsets. The screen graphics display decorative data. [McLaren’s official pit-wall overview](https://www.mclaren.com/racing/formula-1/2026/who-sits-on-mclarens-pit-wall/), [F1’s guide to the pit wall](https://www.formula1.com/en/latest/article/the-insiders-guide-to-the-pit-wall.CFwHwjTcLNO5Gf4B3Dy4o).
+
+The project decoded and analyzed the 106.25-second audio track from Lando Norris’s 2024 Monza pole lap to study mechanical harmonics and gear changes. The official video and onboard audio were used only for analysis. [Official F1 onboard lap](https://www.formula1.com/en/video/onboard-lando-norris-2024-pirelli-pole-position-award-lap-at-the-italian-grand-prix.1808919989852209304).
+
+The distributable engine sound uses two custom Web Audio waveforms derived by averaging phase-aligned cycles from a CC0 recording. The source car and year are unverified, and the synthesis captures a general engine character. `scripts/prepare-engine-cycles.py` reproduces the extraction. Python and the original recording are only needed for that extraction, and the regular build uses the prepared waveforms. Sound starts muted and can be enabled with the audio button. [lmnmrn’s motor.wav / F1 Engine Ignition](https://freesound.org/people/lmnmrn/sounds/197219/).
+
+### Code map
+
+`src/monza-historic-oval.ts` generates Monza’s historic oval scenery, including the north and south banked concrete turns, the old eastern straight, support ribs, concrete joints, and period barriers. The modern GP circuit passes beneath the north turn. The real 1955 high-speed oval measured 4,250 metres, with a turn radius of about 320 metres and a maximum grade of 80% at the outer edge. The game preserves progressive banking in the cross-section, while the footprint is compressed to fit the shorter map and avoid the grandstands, buildings, and pit facilities. The shared western straight uses the existing route to leave the garages clear. The historic oval is a stylized scenic feature outside the drivable routes. Trees and service vehicles are placed clear of its footprint, and the modern GP centerline and driving elevations use the original game geometry. [Official Monza banking overview](https://www.monzanet.it/sopraelevata-monza/), [official circuit history](https://www.monzanet.it/autodromo-di-monza-storia/), [official Serraglio sector description](https://www.monzanet.it/tracciato-pista-monza/).
+
+The overpass has a full-width, level deck. Each approach is 82 units long, with a constant-grade section and a 12-unit transition. The banking eases to level before the bridge, and the road stays flat across its width on the descent. The roughly 65-unit northern maintenance link is 10 units wide and joins the GP circuit through a wide opening at a shallow 30-degree angle. The first 45% of its approach stays level. The south turn and its roughly 97-unit link follow one continuous convex curve from `src/monza-historic-south-plan.ts` in place of the former sequence of S-bends and separate arc segments. The southern link is also 10 units wide, with its banking and base elevation easing to the main track’s level surface over the first half. Both joins clip the actual triangles where they intersect GP asphalt, forming level, full-width openings. The gravel and green runoff meshes are subdivided locally and trimmed along the paved edges, while the GP road uses its original vertices, elevations, and driving physics. The kerbs and fences have openings at the joins, with maintenance barriers across the closed links. Separate normals for the road surface and edge caps, along with wear strips fitted to the actual surface triangles, keep lighting consistent and prevent surfaces from intersecting. The grades and junction proportions are adapted to the miniature scene, and the oval serves as scenery only.
+
+Five broadcast camera positions along the main straight feature long lenses, tripods, operators, and platforms at different heights. They face the circuit and leave the pedestrian path clear. The footprints in `src/monza-marshal-layout.ts` keep the red-roof marshal post and its signs clear of the historic oval, modern barriers, grandstands, and flagpole equipment. The Rettifilo DRS activation sign is on the driver’s left at the original activation distance. Mipmapped glTF alpha blending preserves the catch-fence mesh at medium and long distances, where a high alpha cutoff can filter the wires down to isolated dots.
+
+The rubber tire barriers have thick sidewalls, rounded shoulders, and open centers. All 480 tires are rendered in a single instanced draw call. Both TOWER buildings and the Fans Club have continuous curtain walls along their straight sides and finished roof and floor-slab joints, with visible stair doorways and garage openings. The Monza pit apron and fast lane use adjoining paved surfaces so the player can drive out manually after service. The 120 km/h limit applies to the separate pit road and working apron beyond the kerb. At the entry and exit overlaps, the full GP road and red-and-white kerb take priority, and the limiter releases on the first frame back on the main track. Lap validation during pit exit follows the actual driving sequence.
+
+| Module | Purpose |
+| --- | --- |
+| `src/main.ts` | Scene, fixed-step game loop, game state, and UI integration |
+| `src/track.ts`, `spa-track.ts`, `monaco-drive-track.ts` | Road queries, surfaces, checkpoints, geometry, and elevation |
+| `src/scenery.ts`, `spa-scenery.ts`, `monaco-game-scenery.ts` | Buildings, woodland, grandstands, and instanced rendering across the three circuits |
+| `src/pit-complex.ts` | Pit garages, pit-wall rooms, staff, and the RIOLEX clock |
+| `src/pit-lane-controller.ts`, `pit-service-view.ts` | Assisted pit entry, randomized tire changes, tire markings, and service animation |
+| `src/physics.ts`, `handling.ts` | Throttle, progressive braking, steering, grip, and collisions |
+| `src/fleet-car.ts`, `team-catalog.ts` | GLB loading, liveries, helmets, and car details |
+| `src/ai-race.ts`, `ai-rivals.ts` | AI routes, race state, and shared car models |
+| `src/race.ts`, `competition.ts` | Ordered lap validation, standings, and separate timing records |
+| `src/camera.ts`, `road-pose.ts` | Showroom camera, three chase views, and vehicle pose on slopes |
+| `src/powertrain.ts`, `audio.ts`, `engine-cycles.ts` | Eight-speed RPM, gear changes, and mechanical-only engine audio |
+| `src/drs.ts`, `drs-markers.ts`, `drs-wing.ts` | DRS zones, signage, and movable rear wings |
+| `src/ui.ts`, `i18n.ts`, `circuits.ts` | Car selection, circuits, bilingual UI, and storage keys |
+| `src/weather.ts`, `quality.ts` | Sun and rain, render resolution budgets, and automatic quality |
+
+### Verification and Next Steps
+
+`npm test` covers the actual models, lap-counting safeguards, physics, AI, DRS, audio parameters, and separation of the six leaderboards. It also checks clearances around grandstands, buildings, and woodland, along with terrain heights. Monaco checks cover the shoreline footprint, yacht shapes at their placed orientations, separation of the pit-lane surfaces, and the 2025 DRS reference locations. The command output reports the current test count. Separate pit-stop preview checks cover the fixed release light, complete tire models, all 16 crew animations, the placement of tools close to the crew, and hose clearance. At Spa, digital controls drive the actual vehicle and race session through full laps. Geometry scripts also check the terrain, roads, pit lane, and facility clearances.
+
+`test:competition` drives a three-lap race with keyboard events. `test:presentation` checks that the entire car is visible at three screen sizes. `test:audio` uses `OfflineAudioContext` to verify the recorded engine cycles, gear changes, and muting. `test:offline` checks launch from a local file. Browser scene diagnostics through `window.__PP` are available only in Vite's development mode.
+
+The automated tests cover the computer they run on. Verification on other GPUs and browsers, with physical controllers, and through speakers requires separate testing. The next priorities are performance across devices, AI difficulty and racing lines, pit strategy, and more detailed scenery. Migration to public hosting accessible without a VPN comes after those improvements.
+
+### Initial Monaco Map Preview
+
+Run `npm run dev` and open `/monaco.html`. Rotate and zoom the model, choose from nine camera views, open the tunnel cutaway, or tour the circuit. For a playable session, choose Monaco in the game's circuit selector or click **Drive Monaco** at the top right of the review page.
+
+`npm run build:monaco-preview` generates `dist/monaco.html` and the standalone `outputs/Pocket-Paddock-Monaco-Preview-V1.html`, which opens directly. The page also exports the full GLB model. This README describes the references and artistic adjustments. The standalone review page's version history is in the [changelog](CHANGELOG.md).
+
+V1.1 places the full bases and roofs of all seven grandstands back on land, distributes 36 boats of varied sizes and headings at different densities, and increases the total to 110 palm, cypress, and layered pine trees. The DRS toggle shows the FIA's 2025 reference positions, with detection 80 m after T16 and activation 18 m after T19. Green roadside dashes are review guides in the visual-only preview. The main game supports driving physics and working DRS.
+
+V1.2 replaces the former site of grandstand V, which sat away from the track, with a five-story harbor apartment building. Three compact grandstands, Q1 through Q3, occupy the land on the seaward side of T14–T17 and face their respective track sections. The other six grandstands occupy their original sites, with the city-side open grandstands N and O facing the nearest part of the start and finish straight. There are nine grandstands in all. Regression checks confirm that the apartment building's eaves and balconies fit within the former V footprint and that the new grandstands clear the water, roads, and docks.
+
+V1.3 rebuilds the wider dedicated pit lane, continuous two-story block of eight garages, and stopping apron using the FIA pit-lane diagram. The dark blue-gray fast lane, blue-green strip, and working area meet edge to edge. The barriers and catch fencing have physical openings at the entry and exit. A dedicated pit-lane camera frames the facilities alongside the original Monaco circuit layout.
+
+V1.4 completes the solid side walls of all eight garages and replaces the small computers with dual-screen telemetry workstations. Each workstation includes a keyboard, mouse, chair, and a crew figure with a team-colored torso and helmet. The eighth camera button, **Strategy Desk Close-Up**, looks into the first garage. The gray work area has a distinct boundary with the fast lane.
+
+V1.5 places eight individual team strategy pods on the white island to the right of the fast lane, next to the main-track wall and opposite the garages. Each pod has four telemetry screens, keyboards and mice, two seats, and two torso-only crew figures with oval bodies and team-colored helmets. A narrow rear canopy keeps the screens visible. A new **Right-Side Strategy Pods** camera shows the island. The former workstation close-up is now called **Garage Interior**. Clearance checks cover the roof overhangs, foundations, and crew figures along the circuit, fast lane, wall, and catch fencing. Pod count and dimensions are scaled for the review model.
+
+V1.6 mounts the starting lights on a single-post cantilever on the grandstand side. The post reaches the ground, the beam clears the pit building, and the lights face the drivers on the grid. The actual seats of grandstands E, P, and T face the nearest part of the main circuit. Spectators in these three stands have front-facing eye details.
+
+The pit-building expansion increases each garage from 3.4 × 3 to 4.05 × 3.3 units, adding about 31% to the floor area. Computers and tools sit along the sides to provide central parking space. The fast lane is 6 units wide, and the working apron is 3.5 units wide. The layout has eight garages and eight individual team strategy pods on the right.
+
+---
+
+## 简体中文
+
 **0.15 · 摩纳哥正式驾驶与三赛道比赛**。Three.js + TypeScript + Vite 制作的 Q 版方程式赛车游戏，提供蒙扎、斯帕、摩纳哥三个可驾驶赛道，以及单人计时、三圈人机竞速、11 支车队与 22 位车手、晴天 / 雨天、中英文、键盘与标准映射手柄。
 
 [启动项目](#启动) · [版本更新日志](CHANGELOG.md) · [作业项目说明与图片](docs/SUBMISSION.md) · [在线试玩](https://pocket-paddock-monza.leowang8431.chatgpt.site/)
@@ -8,7 +225,7 @@
 
 本项目在 AI 工具辅助下持续迭代，通过试玩反馈完善玩法、模型、界面和性能。赛车、头盔及音频资源随项目提供，开发依赖通过 `npm ci` 安装。运行时不访问外部模型库、音频库或字体 CDN。线上 3D 渲染仍由访问者电脑完成，帧率取决于显卡、驱动、硬件加速、分辨率和画质；更换托管平台主要影响加载与访问，不会让云端替电脑渲染。
 
-## 摩纳哥正式比赛 · 0.15
+### 摩纳哥正式比赛 · 0.15
 
 19个弯道的城市赛道现已接入计时挑战和三圈人机竞速，支持原有11车队、22车手、晴雨、中英文、键盘及标准手柄。车手必须按顺序经过24个检查点；摩纳哥晴雨最佳圈分别存储，原四个蒙扎/斯帕榜单保持。
 
@@ -18,7 +235,7 @@
 
 DRS沿用[FIA 2025摩纳哥赛道图](https://www.fia.com/system/files/decision-document/2025_monaco_grand_prix_-_race_directors_event_notes_-_circuit_map_pit_lane_map_ers_battery_containment_area_red_zones.pdf)的单区域参考。T1前的关闭点为游戏制动余量，雨天及制动自动关闭，AI暂不主动使用DRS。
 
-## 斯帕坡道与维修区 · 0.14
+### 斯帕坡道与维修区 · 0.14
 
 道路网格、连续高度、坡度与车辆接地使用同一份高程曲线，消除最近采样点切换造成的俯仰跳变；保留原平面路线、Eau Rouge / Raidillon 上坡与全圈高差。此修复作用于道路及驾驶数据，不通过镜头抖动滤镜遮盖起伏。
 
@@ -26,7 +243,7 @@ DRS沿用[FIA 2025摩纳哥赛道图](https://www.fia.com/system/files/decision-
 
 摩纳哥同时保留独立地图审核页。V1.4补齐8间P房的侧墙，加入16块遥测屏、键盘、座椅及躯干和头盔工作人员；新增“策略台近景”机位。建筑形态与工位为微缩艺术化制作，并非测绘复刻。
 
-## 游戏内自动进站
+### 游戏内自动进站
 
 在围场或驾驶 HUD 选择“下一套”轮胎（S/M/H/W），手动驶入维修支路。蒙扎接管区覆盖路肩外的整段入口路面及进入车库前的缓行直道，包含道路两侧；正常行驶进入这一区域即由电脑接管，无需跨过某个窄门或对准路中一点。主赛道、白线和红白路肩排除在接管区外。电脑以 **120 km/h** 为速度上限开到对应车队 P 房前，由16人完成换胎。入口已删除原“PIT 70”地板标识。每次合法进入只随机抽取一次2–4秒停站时长，暂停不会重抽或消耗服务时间。换胎完成立即交还方向、油门和刹车，由玩家手动驶出；在维修区道路和工作带内仍保持120 km/h硬限速，驶出后解除。
 
@@ -38,7 +255,7 @@ DRS沿用[FIA 2025摩纳哥赛道图](https://www.fia.com/system/files/decision-
 
 验证入口：`node scripts/check-pit-game.mjs`（先启动Vite），另有`npm test`与`node scripts/check-offline.mjs`。浏览器报告明确区分从发车出发的真实键盘路线与入口前测试摆位。
 
-## 换胎动画模型审核 · V5
+### 换胎动画模型审核 · V5
 
 [打开独立换胎预览](https://pocket-paddock-monza.leowang8431.chatgpt.site/pit-stop.html?v=5)。用于审核模型和动作，独立预览保留2.6秒基准，正式游戏采用每次2–4秒随机停站。
 
@@ -56,7 +273,7 @@ V5以2.6秒完成从停稳到放行的四轮并行流程，0.5倍/0.25倍慢放�
 
 `PitStopAnimation.setTime(seconds)` 确定姿态，反向拖动无累计漂移；动画在 `src/pit-stop-animation.ts`、棚景在 `src/pit-stop-stage.ts`、界面在 `src/pit-stop-preview.ts`、正常计时与姿态映射在 `src/pit-stop-timing.ts`、音频在 `src/pit-stop-audio.ts`。`node scripts/check-pit-stop-audio.mjs` 验证真实WebAudio输出、暂停/变速/静音和声音缺失时的动画降级。`npm run test:pit-preview` 运行实际Chrome验证，可选录屏需配置开发用Playwright FFmpeg。
 
-## 启动
+### 启动
 
 需要 Node.js 20.19+ 或 22.12+，桌面版 Chrome / Edge 并开启硬件加速。
 
@@ -79,7 +296,7 @@ npm run preview
 
 线上试玩：[Pocket Paddock](https://pocket-paddock-monza.leowang8431.chatgpt.site/)。当前不保证中国大陆无需 VPN 稳定直连；公网迁移按用户选择暂缓。`deployment/` 仅提供部署准备文件。
 
-## 本版内容
+### 本版内容
 
 - 菜单可选择 **蒙扎 / 斯帕 / 摩纳哥**，沿用全车队、天气、语言、视角和比赛模式。换赛道会重载场景，限围场操作。
 - 蒙扎保留原布局与操控、Roggia / Lesmo 2 局部缩窄 5%；看台从 7 座扩至 **21 座、6,184 位观众**。原七座位置和朝向保持，新增十四座检查道路、维修区、屋顶互避，迁移冲突树木。
@@ -89,7 +306,7 @@ npm run preview
 - 成绩按 **三赛道 × 晴雨** 分六个榜。各赛道、天气独立存储；竞速模式不写计时榜。
 - 引擎继续使用 0.11 的 CC0 实录机械周期波形；移除随机噪声和空气层，升档断油、降档补油及起步负载共用八档转速状态。
 
-## 操作
+### 操作
 
 | 操作 | 键盘 | Xbox / PlayStation 标准映射 |
 | --- | --- | --- |
@@ -106,7 +323,7 @@ npm run preview
 
 操作建议：直线先制动、入弯渐松刹、回正后加速。雨天抓地更低、制动距离更长。驶入草地或砂石会减速；持续超出赛道使本圈无效。计圈必须正向按顺序经过检查点，重置使本圈无效。
 
-## 比赛与 DRS
+### 比赛与 DRS
 
 计时挑战包含五灯倒计时、速度 / 档位 / RPM、当前圈与最佳圈、检查点及本地存储。人机竞速共 6 辆车、3 圈，玩家 P3 发车，AI 会按弯道曲率制动、换线和接触避让。玩家与 AI 使用同一套完整优化 GLB，单车约 **27,540 三角形**，对手通过共享几何和实例绘制降低开销。
 
@@ -124,9 +341,9 @@ DRS 参考 **FIA 2025** 地图，作为经典手动玩法保留，不宣称复�
 
 真实米数按各赛道长度比例缩放；弯道出口采用游戏中心线锚点、关闭点为游戏制动区。斯帕 T19 出口使用 Bus Stop 锚点后约 55 米的艺术化定位，不是测绘坐标。
 
-## 真实参考与艺术化处理
+### 真实参考与艺术化处理
 
-### 蒙扎
+#### 蒙扎
 
 主要参考：[官方看台地图](https://www.monzanet.it/wp-content/uploads/2023/09/MAPPA_CIRCUITO_2023_tribune.pdf)、[官方 GP 2026 Hospitality 手册](https://www.monzanet.it/wp-content/uploads/2025/11/Brochure_Hospitality_GPf12026.pdf)、[FIA 2025 意大利站赛道图](https://www.fia.com/system/files/decision-document/2025_italian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exit_map_quarantine_zone_and_red_zones.pdf)。保留 P 房与看台分列主直道两侧、维修通道与围场设施的大体关系，区分独立 TOWER 和弧形 Fans Club。
 
@@ -134,7 +351,7 @@ DRS 参考 **FIA 2025** 地图，作为经典手动玩法保留，不宣称复�
 
 树林参考[官方自然资料](https://reggiadimonza.it/natura/)，用多种宽冠 / 柱冠等轮廓表现公园。护栏外吊车、救护车与砂石区轮胎墙是静态装饰；具体车型、数量和停放点为艺术化设计。
 
-### 斯帕
+#### 斯帕
 
 平面布局来自 [Tomislav Bacinger 的 f1-circuits](https://github.com/bacinger/f1-circuits/blob/master/circuits/be-1925.geojson)，MIT 许可见 `THIRD_PARTY_NOTICES.txt`；高程参考[赛车场官方场地资料](https://www.spa-francorchamps.be/sites/default/files/pdf/en/SF_access-organiser.pdf)，在公开高度站点之间插值。
 
@@ -144,7 +361,7 @@ Raidillon 看台参考[官方 2022 新设施介绍](https://www.spa-francorchamp
 
 **没有建筑 CAD 或现场测量，不能称作精确 1:1 复刻。** 看台轮廓、座位容量和接待层按照片研究，几何尺寸、其他看台分布与森林位置属于微缩场景设计。
 
-### 赛车、策略室与音频
+#### 赛车、策略室与音频
 
 赛车与头盔来自用户提供的 GLB / OBJ / MTL 及 CSV，做了合并、材质与运行时模型优化。车手年份、名单和模型配色沿用资产资料，不将未经核实的纹样标作真实官方头盔复刻。用户资产的原始授权没有单独附带，项目不代替原权利人授予新许可。
 
@@ -152,7 +369,7 @@ Raidillon 看台参考[官方 2022 新设施介绍](https://www.spa-francorchamp
 
 实际解码并分析了 [F1 官方 Norris 2024 蒙扎杆位圈](https://www.formula1.com/en/video/onboard-lando-norris-2024-pirelli-pole-position-award-lap-at-the-italian-grand-prix.1808919989852209304)的 106.25 秒音轨，研究机械谐波与换档变化；官方视频未打包。可分发声源来自 [lmnmrn 的 motor.wav / F1 Engine Ignition](https://freesound.org/people/lmnmrn/sounds/197219/)，CC0，未核实原车型 / 年份。对录音平均相位对齐周期形成两组自定义 Web Audio 波形，非直接播放官方车载音轨，也非特定车型的精确仿真。`scripts/prepare-engine-cycles.py` 可复现提取，正常构建无需 Python 或音频下载。声音默认关闭，需点击按钮开启。
 
-## 代码入口
+### 代码入口
 
 蒙扎历史环道装饰由 `src/monza-historic-oval.ts` 生成。依据[蒙扎官方老倾斜赛道说明](https://www.monzanet.it/sopraelevata-monza/)、[官方赛道历史](https://www.monzanet.it/autodromo-di-monza-storia/)及[官方 Serraglio 路段说明](https://www.monzanet.it/tracciato-pista-monza/)，加入北、南倾斜混凝土弯、东侧旧直道、支撑拱肋、混凝土接缝和旧护栏，保留现代 GP 道路从北弯下方穿过的关系。真实1955年高速环道长4250米、弯道半径约320米，外缘最大坡度80%；本游戏横断面保留渐进倾角，平面按既有缩短地图压缩并避开现有看台、建筑与维修区，西侧共用直道不另造穿越P房的路。它是未开放给驾驶的场景装饰，不是测绘级完整旧赛道。树木和服务车会避让其实体占地，现有GP中心线和驾驶高程没有改变。
 
@@ -179,7 +396,7 @@ Raidillon 看台参考[官方 2022 新设施介绍](https://www.spa-francorchamp
 | `src/ui.ts`、`i18n.ts`、`circuits.ts` | 选车、赛道、双语、存储键 |
 | `src/weather.ts`、`quality.ts` | 晴雨、分辨率预算与自动画质 |
 
-## 验证与后续
+### 验证与后续
 
 `npm test` 覆盖实际模型、计圈防作弊、物理、AI、DRS、音频参数、六榜隔离、看台 / 建筑 / 树林净空及真实地形高度，以及摩纳哥地图的实际岸线占地、船只旋转外形、维修通道路面分离与 2025 DRS 参考位置；检查数量以当前命令输出为准。换胎预览另验证固定放行灯、完整轮胎、16人动作、工具近身及气管净空。斯帕包含数字输入驱动真实 Vehicle + RaceSession 的完整跑圈检查；几何脚本还检查地形、道路、维修区和设施净空。
 
@@ -187,7 +404,7 @@ Raidillon 看台参考[官方 2022 新设施介绍](https://www.spa-francorchamp
 
 同一台电脑上的自动测试不能替代其他显卡 / 浏览器、实物手柄或扬声器试听。下一步优先补不同设备性能、AI 难度 / 走线、进站策略和更精细场景，而后再做公网免 VPN 迁移。
 
-## 摩纳哥地图初版预览
+### 摩纳哥地图初版预览
 
 运行 `npm run dev` 后打开 `/monaco.html`，可旋转、缩放模型，切换九个机位、隧道剖开与沿赛道巡览。此入口用于独立模型审核；正式驾驶在游戏的赛道选择中选择摩纳哥，或点击审核页右上角“驾驶摩纳哥”。
 
