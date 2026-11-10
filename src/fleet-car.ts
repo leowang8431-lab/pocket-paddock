@@ -22,7 +22,7 @@ interface Wheel {
   radius:number;
 }
 interface ColorSection {offset:number;count:number;material:string}
-export interface FleetRenderPose {travel:number;steeringAngle:number;helmetRoll:number;helmetPitch:number}
+export interface FleetRenderPose {travel:number;steeringAngle:number;helmetRoll:number;helmetPitch:number;drsOpen?:boolean}
 
 const MODEL_SCALE=1.4;
 const MODEL_BASE=`${import.meta.env?.BASE_URL??'./'}models/`;
@@ -44,7 +44,7 @@ export class FleetCar {
   private drsHinge?:THREE.Group;
   private drsOpen=false;
   readonly group=new THREE.Group();
-  private fallback:Car|undefined=new Car('coral','leclerc-2024');
+  private fallback?:Car;
   private model?:THREE.Group;
   private helmet?:THREE.Group;
   private readonly helmetMount=new THREE.Group();
@@ -67,7 +67,6 @@ export class FleetCar {
 
   constructor(){
     this.group.name='pocket-fleet-car';
-    this.group.add(this.fallback!.group);
     this.atlas.width=1024;this.atlas.height=512;
     this.texture=new THREE.CanvasTexture(this.atlas);
     this.texture.colorSpace=THREE.SRGBColorSpace;
@@ -96,7 +95,7 @@ export class FleetCar {
     };
     return {
       status:this.state,team:this.team,driver:this.driver.id,number:this.driver.number,
-      source:this.state==='ready'?'provided-glb':'procedural-fallback',triangles,drawCalls,
+      source:this.state==='ready'?'provided-glb':this.state==='fallback'?'procedural-fallback':'loading',triangles,drawCalls,
       finish:{clearcoat:this.state==='ready',tyreSidewalls:this.state==='ready'?4:0,decalResolution:this.atlas.width},
       dimensions:{...this.dimensions},bodyColors:colors(this.model),helmetColors:colors(this.helmet),
       wheels:this.wheels.map(w=>({name:w.pivot.name,front:w.front,steering:w.pivot.rotation.y,spin:w.spin.rotation.x})),
@@ -107,7 +106,16 @@ export class FleetCar {
   /** Idempotent. A failed request leaves the original car ready to drive. */
   load():Promise<void>{
     if(this.pending)return this.pending;
+    if(this.state==='fallback')return Promise.resolve();
     this.pending=this.loadModels();return this.pending;
+  }
+
+  useFallback():void{
+    if(this.state!=='loading')return;
+    this.fallback=new Car('coral','leclerc-2024');
+    this.group.add(this.fallback.group);
+    this.select(this.team,this.driver);
+    this.state='fallback';
   }
 
   select(team:TeamId,driver:DriverOption):void{
@@ -149,7 +157,7 @@ export class FleetCar {
       wheel.pivot.rotation.y=wheel.front?pose.steeringAngle:0;
     }
     this.helmetMount.rotation.z=pose.helmetRoll;this.helmetMount.rotation.x=pose.helmetPitch;
-    this.setDrs(false,true);
+    this.setDrs(!!pose.drsOpen,true);
   }
 
   private async loadModels():Promise<void>{
@@ -217,7 +225,7 @@ export class FleetCar {
         if(result.status==='fulfilled'&&'scene' in result.value)disposeObject(result.value.scene);
       }
       this.model=undefined;this.helmet=undefined;this.wheels.length=0;this.wheelDetails.length=0;this.palettes=undefined;
-      this.state='fallback';
+      this.useFallback();
     }
   }
 

@@ -4,7 +4,7 @@ import {CIRCUITS,type CircuitId} from './circuits';
 import {formatTime, type RaceSession} from './race';
 import type {Track} from './track';
 import type {VehiclePhysics} from './physics';
-import {drivingAdvice} from './driving-coach';
+import {KMH_PER_SPEED_UNIT} from './speed-scale';
 import {gearLabel,REDLINE_RPM,type PowertrainState} from './powertrain';
 import type {CameraMode,MenuView} from './camera-profiles';
 import {teams, getTeam, getDriver, DEFAULT_TEAM, DEFAULT_DRIVER, type TeamId, type DriverId} from './team-catalog';
@@ -14,12 +14,20 @@ export interface PitDisplay {
   state:'idle'|'approach'|'service'|'exit';active:boolean;controlled:boolean;limited:boolean;serviceElapsed:number;serviceDuration:number;
   team:TeamId;compound:PitCompound;currentCompound:PitCompound;completedStops:number;
 }
+export interface TyreDisplay {compound:PitCompound;health:number;temperature:number}
 const pitLetters:Record<PitCompound,string>={soft:'S',medium:'M',hard:'H',wet:'W'};
 const pitColors:Record<PitCompound,string>={soft:'#e8604a',medium:'#e2bd3c',hard:'#e5e6dc',wet:'#609bdb'};
+const pitCompoundOptions=(Object.keys(pitLetters) as PitCompound[]).map(compound=>
+  `<option value="${compound}"${compound==='medium'?' selected':''}>${translations.zh[`pit.compound.${compound}`]}</option>`
+).join('');
 export interface CompetitionDisplay {
-  enabled:boolean;lap:number;totalLaps:number;position:number;total:number;elapsed:number;finished:boolean;
-  rows:{id:string;name:string;position:number;color:string;player:boolean;finished:boolean;/** Optional time gap in seconds. */gap?:number}[];
+  enabled:boolean;lap:number;totalLaps:number;position:number;total:number;elapsed:number;finished:boolean;penalty?:number;
+  rows:{
+    id:string;name:string;position:number;color:string;player:boolean;finished:boolean;gap?:number;
+    pitState?:'idle'|'entry'|'approach'|'service'|'exit';pitStops?:number;
+  }[];
 }
+const pitBadge={entry:'race.pit.entry',approach:'race.pit.entry',service:'race.pit.service',exit:'race.pit.exit'} as const;
 const teamCodes:Record<TeamId,string>={mclaren:'MCL',ferrari:'FER',redbull:'RBR',mercedes:'MER',aston:'AMR',alpine:'ALP',williams:'WIL',haas:'HAA',racingbulls:'VCB',audi:'AUD',cadillac:'CAD'};
 // UI swatches sampled from the supplied GLB palettes, with no extra download.
 const helmetSwatches:Record<DriverId,string[]>={
@@ -44,7 +52,7 @@ export class UI {
   language:Language='zh';
   private circuitId:CircuitId='monza';
   private selectedTeam:TeamId=DEFAULT_TEAM;private selectedDriver:DriverId=DEFAULT_DRIVER;
-  private weather:'sunny'|'rainy'='sunny';private soundEnabled=false;
+  private weather:'sunny'|'rainy'='sunny';private soundEnabled=true;
   private modelState:'loading'|'ready'|'fallback'='loading';
   private context?:{race:RaceSession;vehicle:VehiclePhysics;track:Track};
   private localizedNodes:{node:Text;key:TranslationKey;prefix:string;suffix:string}[]=[];
@@ -52,19 +60,20 @@ export class UI {
   private toastEntry?:{key:TranslationKey;params:TranslationParams};
   private drs:DrsDisplay={state:'outside',zone:null,distanceToZone:0,active:false,available:false};
   private gamepad={connected:false,name:'',supported:true};
-  private competition:CompetitionDisplay={enabled:false,lap:1,totalLaps:3,position:1,total:6,elapsed:0,finished:false,rows:[]};
+  private competition:CompetitionDisplay={enabled:false,lap:1,totalLaps:CIRCUITS.monza.raceLaps,position:1,total:6,elapsed:0,finished:false,rows:[]};
   private competitionListSignature='';
   private pit:PitDisplay={state:'idle',active:false,controlled:false,limited:false,serviceElapsed:0,serviceDuration:0,team:DEFAULT_TEAM,compound:'medium',currentCompound:'medium',completedStops:0};
+  private tyres?:TyreDisplay;
   constructor(){
     this.root=document.querySelector('#app')!;
     this.root.innerHTML=`
     <div id="viewport" aria-label="3D 赛车场景"></div>
-    <header class="topbar"><a class="brand" href="./" aria-label="口袋围场首页"><span class="brand-mark">pp<span>·</span></span><span>Pocket Paddock<small>口 袋 围 场</small></span></a><div class="event-label"><span class="live-dot"></span><span id="event-title">自由计时赛</span> <i></i><span id="circuit-title">MONZA, ITALIA</span> <span class="italy">▮▮▮</span></div><label class="quality-control" title="自动模式会根据帧率调整画质；流畅模式优先降低渲染负担">画质<select id="quality" aria-label="画质设置"><option value="auto">自动</option><option value="performance">流畅</option><option value="balanced">均衡</option><option value="high">精细</option></select><span id="fps" aria-label="帧率">— FPS</span></label><button class="icon-button" id="sound" title="开启游戏声音" aria-label="开启游戏声音">声音 关</button></header>
+    <header class="topbar"><a class="brand" href="./" aria-label="口袋围场首页"><span class="brand-mark">pp<span>·</span></span><span>Pocket Paddock<small>口 袋 围 场</small></span></a><div class="event-label"><span class="live-dot"></span><span id="event-title">自由计时赛</span> <i></i><span id="circuit-title">MONZA, ITALIA</span> <span class="italy">▮▮▮</span></div><label class="quality-control" title="自动模式会根据帧率调整画质；流畅模式优先降低渲染负担">画质<select id="quality" aria-label="画质设置"><option value="auto">自动</option><option value="performance">流畅</option><option value="balanced">均衡</option><option value="high">精细</option></select><span id="fps" aria-label="帧率">— FPS</span></label><button class="icon-button" id="sound" title="关闭游戏声音" aria-label="关闭游戏声音">声音 开</button></header>
     <section class="menu-copy menu-only"><div class="eyebrow"><span>13</span> <b id="circuit-kicker">THE TEMPLE OF SPEED</b></div><h1>下一圈，<br><em>由你领跑。</em></h1><p>选一支车队，找到你的节奏。<br>在蒙扎，把每一个弯变成优势。</p><div class="hero-features"><span>晴雨切换</span><span>键盘 / 手柄</span><span>单人 / 人机</span></div><div class="track-pill"><span class="italy">▮▮▮</span><strong>蒙扎</strong><span>意大利 · 艺术化短赛道</span><span class="pill-arrow">↗</span></div></section>
     <section class="car-showcase menu-only" aria-label="赛车展示"><div class="showcase-title"><span class="showcase-number" id="showcase-number">16</span><div><span class="eyebrow">YOUR CONTENDER</span><strong id="showcase-team">Ferrari</strong><small id="showcase-driver">Charles Leclerc</small></div></div><div class="showcase-views" role="group" aria-label="展示角度"><button data-menu-view="front" aria-pressed="true">前侧</button><button data-menu-view="side" aria-pressed="false">侧面</button><button data-menu-view="rear" aria-pressed="false">车尾</button></div><p class="showcase-note">挑选车手，查看车身与头盔细节</p></section>
     <section id="garage" class="garage menu-only team-garage" aria-label="车队与车手设置">
       <div class="garage-header"><div class="panel-heading"><span class="eyebrow">YOUR PADDOCK</span><span class="version">围场车库 / 13</span></div>
-      <h2>准备你的发车阵容。</h2><p class="muted">11 支车队 · 22 位车手</p><div class="race-mode-setting"><label for="race-mode">比赛模式</label><select id="race-mode" aria-label="比赛模式"><option value="time-trial">单人计时挑战</option><option value="race">人机竞速 · 3 圈 · 5 AI</option></select><small id="race-mode-note">独自练习走线 · 挑战个人最佳</small></div><div class="camera-setting circuit-setting"><label id="circuit-select-label" for="circuit">赛道</label><select id="circuit" aria-label="赛道选择">${Object.entries(CIRCUITS).map(([id,item])=>`<option value="${id}">${item.zh} · ${item.countryZh}</option>`).join('')}</select></div><div class="camera-setting"><label for="camera-mode">驾驶视角</label><select id="camera-mode" aria-label="驾驶视角"><option value="close">近距</option><option value="standard" selected>标准</option><option value="far">远距</option></select><span>C / R3</span></div></div>
+      <h2>准备你的发车阵容。</h2><p class="muted">11 支车队 · 22 位车手</p><div class="race-mode-setting"><label for="race-mode">比赛模式</label><select id="race-mode" aria-label="比赛模式"><option value="time-trial">单人计时挑战</option><option value="race">${t('zh','race.mode.ai',{laps:CIRCUITS.monza.raceLaps})}</option></select><small id="race-mode-note">独自练习走线 · 挑战个人最佳</small></div><div class="camera-setting circuit-setting"><label id="circuit-select-label" for="circuit">赛道</label><select id="circuit" aria-label="赛道选择">${Object.entries(CIRCUITS).map(([id,item])=>`<option value="${id}">${item.zh} · ${item.countryZh}</option>`).join('')}</select></div><div class="camera-setting"><label for="camera-mode">驾驶视角</label><select id="camera-mode" aria-label="驾驶视角"><option value="close">近距</option><option value="standard" selected>标准</option><option value="far">远距</option></select><span>C / R3</span></div></div>
       <div class="garage-scroll">
         <div class="team-grid-heading"><label class="field-title" for="team-select"><span>01</span> 选择车队</label><div class="team-select-wrap"><select id="team-select" aria-label="选择车队">${teams.map(team=>`<option value="${team.id}">${team.label} · ${team.name}</option>`).join('')}</select></div></div>
         <div class="team-grid" id="team-grid" role="group" aria-label="车队阵容">${teams.map(team=>`<button class="team-card" data-team="${team.id}" aria-pressed="false" style="--team-color:${team.color}"><span class="team-code">${teamCodes[team.id]}</span><span class="team-card-name">${team.label}</span><span class="team-check" aria-hidden="true">✓</span></button>`).join('')}</div>
@@ -74,27 +83,28 @@ export class UI {
         <p class="reference-note">用户提供的风格化模型 · 年份未标注</p>
         <details class="controller-help"><summary>手柄与驾驶操作</summary><p>连接手柄后，请先按任意按钮唤醒</p><p>左摇杆转向 · RT 油门 · LT 制动 · X / □ DRS · Y / △ 重置 · Menu 暂停 · R3 视角</p><p>围场：← / → 选车队，↑ / ↓ 选车手，A / × 出发；暂停时 A / × 继续、B / ○ 返回车库。</p></details>
       </div>
-      <div class="garage-launch"><div class="personal-best"><span>个人最佳 <small data-circuit-code>MONZA</small></span><strong id="menu-best">—:——.———</strong></div>
+      <div class="garage-launch"><div class="personal-best"><div class="personal-best-time"><span><span id="menu-best-label">个人最佳</span> <small data-circuit-code>MONZA</small></span><strong id="menu-best">—:——.———</strong></div><div class="starting-tyres"><label for="starting-compound">发车轮胎</label><select id="starting-compound">${pitCompoundOptions}</select></div></div>
       <div class="garage-status-row"><p id="model-status" class="model-status" data-status="loading" role="status" aria-live="polite">正在加载赛车与头盔…</p><p id="gamepad-status" class="gamepad-status" role="status"></p></div>
       <button id="start" class="primary-button" disabled>驶入赛道 <span>↗</span></button><p class="start-note">弯前制动 · 稳住弯心 · 回正加速</p></div>
     </section>
     <div class="world-caption menu-only"><span class="caption-dot"></span><b data-circuit-code>MONZA</b> <span>小比例，大热爱。</span></div>
-    <div class="race-hud race-only"><div class="lap-block"><span class="hud-label">LAP / 圈数</span><strong id="lap">01</strong><small id="sector">检查点 1 / 24</small></div><div class="time-block"><span class="hud-label">当前圈时间</span><strong id="current-time">0:00.000</strong><small id="validity">寻找你的节奏</small></div><div class="best-block"><span class="hud-label">个人最佳</span><strong id="best-time">—:——.———</strong><small id="last-time">上一圈 —</small></div></div>
+    <div class="race-hud race-only"><div class="lap-block"><span class="hud-label">LAP / 圈数</span><strong id="lap">01</strong><small id="sector">导航点 1 / 24</small></div><div class="time-block"><span class="hud-label">当前圈时间</span><strong id="current-time">0:00.000</strong><small id="validity">寻找你的节奏</small></div><div class="best-block"><span class="hud-label">个人最佳</span><strong id="best-time">—:——.———</strong><small id="last-time">上一圈 —</small></div></div>
     <div class="race-actions race-only"><button id="reset" class="glass-button" title="R 重置赛车">↺ <span>回到赛道</span><kbd>R</kbd></button><button id="pause" class="glass-button" title="Esc 暂停">Ⅱ <span>暂停</span><kbd>ESC</kbd></button><button id="camera-cycle" class="glass-button" type="button" title="C 切换视角">◉ <span id="camera-label">标准视角</span><kbd>C</kbd></button></div>
-    <div class="map-card race-only"><div><span data-circuit-code>MONZA</span><small id="corner-name">起终点直道</small></div><span id="race-driver" class="race-driver">#16 勒克莱尔 · 法拉利</span><canvas id="minimap" width="360" height="290" aria-label="赛道地图与赛车位置"></canvas><span class="map-note"><b></b> 你的位置 <span>● 下一检查点</span></span></div>
-    <div class="telemetry race-only"><span id="surface">● 沥青路面</span><div class="speed"><strong id="speed">0</strong><span>KM/H</span><b id="gear">N</b></div><div class="engine-readout"><span id="rpm-value">3,300 RPM</span><small id="shift-state"></small></div><div class="rev-bar"><i id="rev-fill"></i></div><div class="pedals"><span id="throttle-led">油门</span><span id="brake-led">制动</span><span>抓地有限</span></div><div id="grip-meter" class="grip-meter"><span>轮胎负荷</span><div><i id="grip-fill"></i></div><b id="grip-label">充足</b></div></div>
+    <div class="map-card race-only"><div><span data-circuit-code>MONZA</span><small id="corner-name">起终点直道</small></div><span id="race-driver" class="race-driver">#16 勒克莱尔 · 法拉利</span><canvas id="minimap" width="480" height="384" aria-label="赛道地图与赛车位置"></canvas><span class="map-note"><b></b> 你的位置 <span>● 导航点</span></span></div>
+    <div class="telemetry race-only"><span id="surface">● 沥青路面</span><div class="speed"><strong id="speed">0</strong><span>KM/H</span><b id="gear">N</b></div><div class="engine-readout"><span id="rpm-value">3,300 RPM</span><small id="shift-state"></small></div><div class="rev-bar"><i id="rev-fill"></i></div><div class="pedals"><span id="throttle-led">油门</span><span id="brake-led">制动</span></div><div id="grip-meter" class="grip-meter"><span>轮胎负荷</span><div><i id="grip-fill"></i></div><b id="grip-label">充足</b></div></div>
     <div class="drs-card race-only"><button id="drs-toggle" type="button" aria-label="切换 DRS 后翼" aria-pressed="false" disabled><span class="drs-wordmark">DRS <i aria-hidden="true">↗</i></span><kbd>F</kbd></button><div class="drs-copy"><strong id="drs-status" role="status">等待开放区</strong><span id="drs-zone"></span></div></div>
-    <div id="driving-hint" class="driving-hint race-only" role="status">入弯前制动，出弯后加速</div>
-    <section id="pit-panel" class="pit-service-panel" aria-label="维修区与轮胎" data-state="idle"><div class="pit-service-heading"><div><span class="pit-eyebrow">PIT LANE</span><strong id="pit-status" role="status">手动驾驶</strong></div><span id="pit-limit" class="pit-speed-limit" aria-label="维修区限速120公里每小时"><b>120</b><small>KM/H</small></span></div><div class="pit-tyre-setting"><span class="pit-current"><small id="pit-current-label">当前轮胎</small><b id="pit-current-compound">M</b></span><label id="pit-compound-label" for="pit-compound">下一套</label><select id="pit-compound" aria-label="下一套轮胎"><option value="soft">软胎 · S</option><option value="medium" selected>中性胎 · M</option><option value="hard">硬胎 · H</option><option value="wet">雨胎 · W</option></select></div><div id="pit-service-timer" class="pit-service-timer" hidden><div><span id="pit-time-label">换胎剩余</span><strong id="pit-remaining">—</strong><small id="pit-service-duration"></small></div><div id="pit-progress-track" class="pit-progress-track" role="progressbar" aria-label="换胎进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="pit-progress"></i></div></div><p id="pit-description">驶入维修区，系统自动接管</p><div class="pit-service-foot"><span id="pit-team">Ferrari</span><small id="pit-stop-count"></small></div></section>
+    <div id="tyre-readout" class="tyre-readout race-only" role="group" aria-label="当前轮胎"><b id="tyre-compound" aria-hidden="true">M</b><strong id="tyre-health" aria-hidden="true">100%</strong><span id="tyre-temperature" aria-hidden="true">—</span></div>
+    <section id="pit-panel" class="pit-service-panel" aria-label="维修区与轮胎" data-state="idle"><div class="pit-service-heading"><div><span class="pit-eyebrow">PIT LANE</span><strong id="pit-status" role="status">手动驾驶</strong></div><span id="pit-limit" class="pit-speed-limit" aria-label="维修区限速120公里每小时"><b>120</b><small>KM/H</small></span></div>
+      <div class="pit-tyre-setting"><span class="pit-current"><small id="pit-current-label">当前轮胎</small><b id="pit-current-compound">M</b></span><label id="pit-compound-label" for="pit-compound">下一套</label><select id="pit-compound" aria-label="下一套轮胎">${pitCompoundOptions}</select></div><div id="pit-service-timer" class="pit-service-timer" hidden><div><span id="pit-time-label">换胎剩余</span><strong id="pit-remaining">—</strong><small id="pit-service-duration"></small></div><div id="pit-progress-track" class="pit-progress-track" role="progressbar" aria-label="换胎进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="pit-progress"></i></div></div><p id="pit-description">驶入维修区，系统自动接管</p><div class="pit-service-foot"><span id="pit-team">Ferrari</span><small id="pit-stop-count"></small></div></section>
     <aside id="competition-leaderboard" class="competition-leaderboard" aria-label="实时比赛排名" hidden><div class="competition-board-heading"><span id="competition-position-label">场上名次</span><strong id="race-position">P01 <small>/ 6</small></strong></div><ol id="competition-rows"></ol></aside>
-    <div id="competition-result" class="competition-result" hidden><section class="competition-result-panel" role="dialog" aria-modal="true" aria-labelledby="competition-title"><div class="finish-chequer" aria-hidden="true"></div><span class="eyebrow">CHEQUERED FLAG</span><h2 id="competition-title">冲线完成！</h2><p id="competition-summary"></p><div class="competition-result-stats"><div><span id="competition-result-position-label">完赛名次</span><strong id="competition-result-position">P01</strong></div><div><span id="competition-result-time-label">比赛总用时</span><strong id="competition-result-time">0:00.000</strong></div></div><ol id="competition-result-rows" class="competition-result-rows"></ol><p id="competition-classification-note" class="competition-classification-note">冲线时排名 · 未完赛车按赛道进度排序</p><p id="competition-record-note" class="competition-record-note">竞速圈速不计入计时榜</p><button id="competition-restart" class="primary-button" type="button">再比一场 <span>↗</span></button><button id="competition-garage" class="secondary-button" type="button">返回围场</button></section></div>
+    <div id="competition-result" class="competition-result" hidden><section class="competition-result-panel" role="dialog" aria-modal="true" aria-labelledby="competition-title"><div class="finish-chequer" aria-hidden="true"></div><span class="eyebrow">CHEQUERED FLAG</span><h2 id="competition-title">冲线完成！</h2><p id="competition-summary"></p><div class="competition-result-stats"><div><span id="competition-result-position-label">完赛名次</span><strong id="competition-result-position">P01</strong></div><div><span id="competition-result-time-label">比赛总用时</span><strong id="competition-result-time">0:00.000</strong><small id="competition-result-penalty" hidden></small></div></div><ol id="competition-result-rows" class="competition-result-rows"></ol><p id="competition-classification-note" class="competition-classification-note"></p><p id="competition-record-note" class="competition-record-note">竞速圈速不计入计时榜</p><button id="competition-restart" class="primary-button" type="button">再比一场 <span>↗</span></button><button id="competition-garage" class="secondary-button" type="button">返回围场</button></section></div>
     <footer class="controls"><span class="control-group"><kbd>W</kbd><kbd>↑</kbd> 油门</span><span class="control-group"><kbd>S</kbd><kbd>↓</kbd> 制动 / 倒车</span><span class="control-group"><kbd>A</kbd><kbd>D</kbd> 转向</span><span class="control-group desktop-control"><kbd>R</kbd> 重置</span><span class="control-group drs-control"><kbd>F</kbd> DRS</span><span class="control-group desktop-control"><kbd>C</kbd> 视角</span><span class="footer-tag">MADE FOR THE LOVE OF RACING <span>✳</span></span></footer>
     <div id="countdown" class="countdown" aria-live="polite" hidden><div id="countdown-lights" class="countdown-lights">${Array.from({length:5},()=>'<i></i>').join('')}</div><strong id="countdown-text">准备起步</strong><span>红灯熄灭后，按 W 或 ↑ 加速</span></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <div id="diagnostics-modal" class="diagnostics-modal" hidden><section class="diagnostics-panel" role="dialog" aria-modal="true" aria-labelledby="diagnostics-title"><div class="diagnostics-heading"><h2 id="diagnostics-title">本机性能信息</h2><button id="diagnostics-close" type="button">关闭</button></div><p class="diagnostics-explanation">3D 画面在访问者的设备上渲染，网速主要影响加载。持续低帧率时，请先选择自动或流畅画质，并检查浏览器硬件加速。</p><pre id="diagnostics-report" tabindex="0" aria-label="本机诊断报告"></pre><p class="diagnostics-privacy">诊断仅在本机生成，不会自动上传。关闭后保持当前暂停状态，可自行继续驾驶。</p><button id="diagnostics-export" class="secondary-button" type="button">导出诊断文件</button></section></div>
     <div id="pause-modal" class="modal" hidden><section class="pause-panel"><span class="eyebrow">TAKE A BREATHER</span><h2>休息一下，再追速度。</h2><p>计时和赛车已暂停。</p><button id="resume" class="primary-button">继续驾驶 <span>→</span></button><button id="restart" class="secondary-button">重新开始计时赛</button><button id="garage-back" class="text-button">返回围场 · 调整赛车</button></section></div>
     <div class="touch-controls race-only"><div><button data-control="KeyA" aria-label="向左转">◀</button><button data-control="KeyD" aria-label="向右转">▶</button></div><div><button data-control="KeyS" aria-label="刹车">制动</button><button data-control="KeyW" aria-label="油门">油门</button></div></div>
-    <div id="loading" class="loading"><span class="brand-mark">pp·</span><strong>正在布置你的围场…</strong><span>连接赛道 · 安装轮胎 · 检查发车灯</span></div>`;
+    ${document.getElementById('loading')?'':`<div id="loading" class="loading" role="status"><span class="brand-mark" aria-hidden="true">pp·</span><strong id="loading-title">正在布置你的围场…</strong><span id="loading-detail">连接赛道 · 安装轮胎 · 检查发车灯</span></div>`}`;
     this.map=this.el<HTMLCanvasElement>('minimap');this.ctx=this.map.getContext('2d')!;
     this.prepareLocalization();
     try{const saved=localStorage.getItem('pocket-paddock.language');if(isLanguage(saved))this.language=saved;}catch{}
@@ -133,7 +143,6 @@ export class UI {
     const qualityLabel=this.root.querySelector('.quality-control')!;
     for(const node of [...qualityLabel.childNodes])if(node.nodeType===Node.TEXT_NODE&&node.textContent?.trim()==='画质'){const label=document.createElement('b');label.className='setting-label';label.textContent='画质';node.replaceWith(label);}
     this.root.querySelector('.garage .muted')!.insertAdjacentHTML('afterend','<div class="weather-summary"><span id="weather-condition"></span><small>切换天气重新计时 · 晴雨成绩分开保存</small></div>');
-    const bestLabel=this.root.querySelector('.personal-best>span')!;bestLabel.innerHTML='<span id="menu-best-label"></span><small data-circuit-code>MONZA</small>';
     this.root.querySelector('.best-block .hud-label')!.id='best-label';
     this.root.querySelector('.pedals')!.insertAdjacentHTML('afterend','<div class="pedal-pressure"><div><span>油门开度</span><div class="pressure-track"><i id="throttle-pressure-fill"></i></div><b id="throttle-pressure-value">0%</b></div><div><span>制动压力</span><div class="pressure-track"><i id="brake-pressure-fill"></i></div><b id="brake-pressure-value">0%</b></div></div>');
     const keys=new Map(Object.entries(translations.zh).filter(([,value])=>!value.includes('{')).map(([key,value])=>[value,key as TranslationKey]));
@@ -157,6 +166,7 @@ export class UI {
     this.el<HTMLSelectElement>('team-select').querySelectorAll('option').forEach(option=>{const team=getTeam(option.value as TeamId);option.textContent=language==='zh'?`${team.label} · ${team.name}`:team.name;});
     this.setTeam(this.selectedTeam,this.selectedDriver);this.setWeather(this.weather);this.setSound(this.soundEnabled);this.setModelStatus(this.modelState);
     this.setDrs(this.drs);this.setGamepad(this.gamepad);this.renderPit();
+    if(this.tyres)this.setTyres(this.tyres);
     if(this.context)this.update(this.context.race,this.context.vehicle,this.context.track);
     this.setCompetition(this.competition);this.setCircuit(this.circuitId);
     if(this.toastEntry)this.text('toast',this.t(this.toastEntry.key,this.localizedParams(this.toastEntry.params)));
@@ -206,6 +216,20 @@ export class UI {
     this.root.querySelectorAll<HTMLButtonElement>('[data-menu-view]').forEach(button=>{const selected=button.dataset.menuView===view;button.setAttribute('aria-pressed',String(selected));button.textContent=this.t(`showcase.${button.dataset.menuView as MenuView}`);});
   }
   setPit(info:PitDisplay){this.pit={...info};this.renderPit();}
+  setTyres(info:TyreDisplay){
+    this.tyres=info;
+    const health=Math.round(Math.max(0,Math.min(1,info.health))*100),temperature=Math.round(info.temperature);
+    const readout=this.el('tyre-readout');
+    this.text('tyre-compound',pitLetters[info.compound]);
+    this.text('tyre-health',`${health}%`);
+    this.text('tyre-temperature',`${temperature}°C`);
+    if(readout.dataset.compound!==info.compound){
+      readout.dataset.compound=info.compound;
+      readout.style.setProperty('--pit-tyre-color',pitColors[info.compound]);
+    }
+    const label=this.t('tyre.telemetry',{compound:this.t(`pit.compound.${info.compound}`),health,temperature});
+    if(readout.getAttribute('aria-label')!==label){readout.title=label;readout.setAttribute('aria-label',label);}
+  }
   private renderPit(){
     const info=this.pit,panel=this.el('pit-panel'),menu=(this.context?.race.state??document.body.dataset.state??'menu')==='menu';
     const target=menu?this.root.querySelector('.garage-scroll')!:this.root;
@@ -217,7 +241,6 @@ export class UI {
     this.el('pit-current-compound').style.setProperty('--pit-tyre-color',pitColors[info.currentCompound]);this.el('pit-current-compound').title=label;this.el('pit-current-compound').setAttribute('aria-label',`${this.t('pit.current')}: ${label}`);
     this.text('pit-current-label',this.t('pit.current'));this.text('pit-compound-label',this.t('pit.next'));
     const select=this.el<HTMLSelectElement>('pit-compound');select.setAttribute('aria-label',this.t('pit.nextTyres'));select.value=info.compound;select.disabled=info.controlled;
-    for(const option of select.options)option.textContent=this.t(`pit.compound.${option.value as PitCompound}`);
     this.text('pit-status',this.t(info.state==='idle'&&info.limited?'pit.status.limited':`pit.status.${info.state}`));this.text('pit-description',this.t(info.state==='idle'&&info.limited?'pit.help.exit':`pit.help.${info.state}`));
     this.text('pit-team',this.language==='zh'?team.label:team.name);this.text('pit-stop-count',info.completedStops?this.t('pit.completed',{count:info.completedStops}):'');
     const service=info.state==='service',duration=Number.isFinite(info.serviceDuration)?Math.max(0,info.serviceDuration):0,elapsed=Number.isFinite(info.serviceElapsed)?Math.max(0,info.serviceElapsed):0;
@@ -234,7 +257,6 @@ export class UI {
   showDiagnostics(info:unknown){let report:string;try{report=JSON.stringify(info,null,2)??String(info);}catch{report=String(info);}this.text('diagnostics-report',report);this.el('diagnostics-modal').hidden=false;this.el('diagnostics-close').focus();}
   hideDiagnostics(){this.el('diagnostics-modal').hidden=true;this.el('diagnostics').focus();}
   setGamepad(status:{connected:boolean;name:string;supported:boolean}){this.gamepad={...status};const key=!status.supported?(status.connected?'gamepad.unsupported':'gamepad.unavailable'):status.connected?'gamepad.connected':'gamepad.disconnected';this.text('gamepad-status',this.t(key,{name:status.name}));this.el('gamepad-status').dataset.connected=String(status.connected&&status.supported);this.el('gamepad-status').title=status.connected?status.name:this.t('gamepad.waiting');}
-  /** Call after update() so the race classification replaces the TT HUD labels. */
   setCircuit(id:CircuitId){
     this.circuitId=id;document.body.dataset.circuit=id;
     const c=CIRCUITS[id],zh=this.language==='zh';
@@ -249,16 +271,22 @@ export class UI {
     this.root.querySelector('.track-pill>span:nth-of-type(2)')!.textContent=zh?`${c.countryZh} · ${c.kindZh}`:c.locationEn;
     const copy=this.root.querySelector('.menu-copy>p')!;copy.textContent=zh?`选一支车队，找到你的节奏。在${c.zh}，把每一个弯变成优势。`:`Choose your team. Find your rhythm. Make every corner count at ${c.name}.`;
     document.title=zh?'Pocket Paddock · 口袋围场':`Pocket Paddock · ${c.name} ${this.competition.enabled?'Race':'Time Trial'}`;
+    this.updateRaceModeLabels(this.competition.enabled);
   }
+  private updateRaceModeLabels(enabled:boolean){
+    const mode=this.el<HTMLSelectElement>('race-mode'),params={laps:CIRCUITS[this.circuitId].raceLaps};
+    mode.value=enabled?'race':'time-trial';
+    mode.querySelectorAll('option').forEach(option=>option.textContent=this.t(option.value==='race'?'race.mode.ai':'race.mode.tt',params));
+    this.text('race-mode-note',this.t(enabled?'race.note.ai':'race.note.tt',params));
+  }
+  /** Call after update() so the race classification replaces the TT HUD labels. */
   setCompetition(info:CompetitionDisplay){
+    const modeChanged=this.competition.enabled!==info.enabled;
     this.competition={...info,rows:info.rows.slice(0,6)};
     const enabled=info.enabled;
     document.body.dataset.competition=String(enabled);
     document.title=this.language==='zh'?'Pocket Paddock · 口袋围场':enabled?`Pocket Paddock · ${CIRCUITS[this.circuitId].name} Race`:`Pocket Paddock · ${CIRCUITS[this.circuitId].name} Time Trial`;
-    const mode=this.el<HTMLSelectElement>('race-mode');
-    mode.value=enabled?'race':'time-trial';
-    mode.querySelectorAll('option').forEach(option=>option.textContent=this.t(option.value==='race'?'race.mode.ai':'race.mode.tt'));
-    this.text('race-mode-note',this.t(enabled?'race.note.ai':'race.note.tt'));
+    if(modeChanged)this.updateRaceModeLabels(enabled);
     this.text('event-title',this.t(enabled?'race.event':'event'));
     this.text('restart',this.t(enabled?'race.restartPaused':'restart'));
     this.el('competition-leaderboard').hidden=!enabled;
@@ -273,16 +301,20 @@ export class UI {
     const restart=this.el('competition-restart');
     if(restart.firstChild?.nodeType===Node.TEXT_NODE)restart.firstChild.textContent=this.t('race.restart')+' ';
     this.text('competition-garage',this.t('race.garage'));
+    const penalty=enabled?info.penalty??0:0;
+    const penaltyText=penalty>0?this.t('race.penalty',{seconds:penalty}):'';
+    this.text('competition-result-penalty',penaltyText);
+    this.el('competition-result-penalty').hidden=!penaltyText;
     if(enabled){
       this.text('lap',`${Math.max(1,Math.min(info.lap,info.totalLaps))}/${info.totalLaps}`);
       this.text('best-label',this.t('race.totalTime'));this.text('best-time',formatTime(info.elapsed));
-      this.text('last-time',this.t('race.noRecord'));
+      this.text('last-time',penalty>0?this.t('race.penalty.short',{seconds:penalty}):this.t('race.noRecord'));
       this.text('race-position',`P${String(info.position).padStart(2,'0')} / ${info.total}`);
       this.text('competition-result-position',`P${String(info.position).padStart(2,'0')} / ${info.total}`);
       this.text('competition-result-time',formatTime(info.elapsed));
       this.text('competition-summary',this.t('race.summary',{laps:info.totalLaps,total:info.total}));
     }else this.text('best-label',this.t(this.weather==='sunny'?'best.sunny':'best.rainy'));
-    const signature=JSON.stringify([this.language,this.competition.rows]);
+    const signature=JSON.stringify([this.language,this.competition.rows.map(({gap,...row})=>row)]);
     if(signature!==this.competitionListSignature){
       this.competitionListSignature=signature;
       for(const id of ['competition-rows','competition-result-rows']){
@@ -292,11 +324,33 @@ export class UI {
           item.style.setProperty('--rival-color',/^#[0-9a-f]{3,8}$/i.test(row.color)?row.color:'#3a745a');
           const rank=document.createElement('b'),name=document.createElement('span'),status=document.createElement('small');
           rank.textContent=String(row.position).padStart(2,'0');name.textContent=row.name;name.title=row.name;
-          status.textContent=row.finished?this.t('race.finishedFlag'):row.player?this.t('race.you'):Number.isFinite(row.gap)?`+${Math.max(0,row.gap!).toFixed(1)}s`:this.t('race.runningFlag');
+          status.className='competition-row-meta';
+          const gapLabel=document.createElement('span');
+          gapLabel.className='competition-gap';
+          const onPitRoad=!row.finished&&!row.player&&row.pitState&&row.pitState!=='idle'?row.pitState:null;
+          if(onPitRoad||(row.finished&&id==='competition-result-rows'&&row.pitStops&&row.pitStops>0)){
+            const badge=document.createElement('span');
+            badge.className='competition-pit-badge';
+            badge.dataset.pit=onPitRoad??'stops';
+            badge.textContent=onPitRoad?this.t(pitBadge[onPitRoad]):this.t('race.pit.stops',{count:row.pitStops!});
+            status.append(badge);
+          }
+          status.append(gapLabel);
           item.append(rank,name,status);list.append(item);
         }
       }
     }
+    const liveGaps=this.el('competition-rows').querySelectorAll<HTMLElement>('.competition-gap');
+    const resultGaps=this.el('competition-result-rows').querySelectorAll<HTMLElement>('.competition-gap');
+    this.competition.rows.forEach((row,index)=>{
+      const gap=index>0&&row.gap!==undefined&&Number.isFinite(row.gap)?Math.max(0,Math.round(row.gap*1000)/1000):null;
+      const value=gap===null?'—':gap<60?`+${gap.toFixed(3)} s`:`+${formatTime(gap)}`;
+      for(const label of [liveGaps[index],resultGaps[index]]){
+        if(label.textContent===value)continue;
+        label.textContent=value;
+        label.title=gap===null?'':this.t('race.gap',{time:value});
+      }
+    });
     const result=this.el('competition-result'),showResult=enabled&&info.finished,wasHidden=result.hidden;
     result.hidden=!showResult;
     if(showResult&&wasHidden)this.el('competition-restart').focus();
@@ -321,13 +375,15 @@ export class UI {
     const weatherSelect=this.el<HTMLSelectElement>('weather'),locked=race.state==='countdown'||race.state==='racing'||race.state==='finished';
     if(weatherSelect.disabled!==locked){weatherSelect.disabled=locked;this.el('weather-control').title=this.t(locked?'weather.locked':'weather.help');}
     this.text('countdown-text',this.t(race.countdown<3?'countdown.ready':'countdown.watch'));
-    this.text('lap',String(race.lap).padStart(2,'0'));this.text('current-time',formatTime(race.elapsed));
+    this.text('lap',String(race.lap).padStart(2,'0'));this.text('current-time',formatTime(race.elapsed+race.lapPenalty));
     this.text('best-time',formatTime(race.best));this.text('menu-best',formatTime(race.best));
     this.text('sector',this.t('checkpoint',{current:Math.min(race.nextCheckpoint,track.checkpoints.length),total:track.checkpoints.length}));
-    this.text('validity',this.t(race.valid?'valid':race.invalidReason==='reset'?'invalid.reset':'invalid.limits'));
-    this.el('validity').classList.toggle('invalid',!race.valid);
-    this.text('last-time',this.t('last',{time:formatTime(race.last)}));
-    const kmh=Math.round(Math.abs(vehicle.speed)*6);this.text('speed',String(kmh));this.text('gear',vehicle.speed<-.1?'R':kmh<2?'N':String(Math.min(7,1+Math.floor(kmh/36))));
+    const validity=!race.valid?(race.invalidReason==='reset'?'invalid.reset':'invalid.limits'):race.lapPenalty>0?'lap.penalty':'valid';
+    this.text('validity',this.t(validity,{seconds:race.lapPenalty}));
+    this.el('validity').classList.toggle('invalid',!race.valid||race.lapPenalty>0);
+    const lastPenalty=race.result?.penalty??0;
+    this.text('last-time',this.t(lastPenalty>0?'last.penalty':'last',{time:formatTime(race.last),seconds:lastPenalty}));
+    const kmh=Math.round(Math.abs(vehicle.speed)*KMH_PER_SPEED_UNIT);this.text('speed',String(kmh));this.text('gear',vehicle.speed<-.1?'R':kmh<2?'N':String(Math.min(7,1+Math.floor(kmh/36))));
     this.el('rev-fill').style.width=`${Math.min(100,kmh/240*100)}%`;
     const pressure=vehicle as VehiclePhysics&{brakePressure?:number;throttlePressure?:number};
     for(const [id,value] of [['throttle',pressure.throttlePressure??0],['brake',pressure.brakePressure??0]] as const){const amount=Number.isFinite(value)?Math.max(0,Math.min(1,value)):0;this.el(`${id}-pressure-fill`).style.width=`${amount*100}%`;this.text(`${id}-pressure-value`,`${Math.round(amount*100)}%`);}
@@ -338,14 +394,12 @@ export class UI {
     this.el('grip-fill').style.width=`${Math.min(100,usage*100)}%`;
     this.el('grip-meter').classList.toggle('saturated',vehicle.sliding);
     this.text('grip-label',this.t(vehicle.sliding?'grip.limit':usage>.75?'grip.near':'grip.full'));
-    const advice=drivingAdvice(track,distance,vehicle,this.language);
-    this.text('driving-hint',advice.text);this.el('driving-hint').dataset.level=advice.level;
     let corner='起终点直道';for(const c of track.corners)if(distance>=c.distance)corner=c.name;
     this.text('corner-name',localizedCorner(corner,this.language));this.drawMap(track,vehicle,race);
     if(this.toastUntil&&performance.now()>this.toastUntil){this.el('toast').hidden=true;this.toastUntil=0;this.toastEntry=undefined;}
   }
   private drawMap(track:Track,vehicle:VehiclePhysics,race:RaceSession){
-    const ctx=this.ctx,w=360,h=290;ctx.clearRect(0,0,w,h);
+    const ctx=this.ctx,w=this.map.width,h=this.map.height;ctx.clearRect(0,0,w,h);
     if(this.mapTrack!==track){
       this.mapTrack=track;let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
       for(const s of track.samples){minX=Math.min(minX,s.point.x);maxX=Math.max(maxX,s.point.x);minZ=Math.min(minZ,s.point.z);maxZ=Math.max(maxZ,s.point.z);}
@@ -353,9 +407,9 @@ export class UI {
       this.mapProject=(x:number,z:number)=>[w/2+(x-(minX+maxX)/2)*scale,h/2+(z-(minZ+maxZ)/2)*scale];
       this.mapBackground=document.createElement('canvas');this.mapBackground.width=w;this.mapBackground.height=h;
       const bg=this.mapBackground.getContext('2d')!;
-      bg.beginPath();track.samples.forEach((s,i)=>{const [x,y]=this.mapProject(s.point.x,s.point.z);if(i===0)bg.moveTo(x,y);else bg.lineTo(x,y);});bg.closePath();bg.strokeStyle='#c3d0c6';bg.lineWidth=8;bg.lineJoin='round';bg.stroke();bg.strokeStyle='#fffef6';bg.lineWidth=3;bg.stroke();
+      bg.beginPath();track.samples.forEach((s,i)=>{const [x,y]=this.mapProject(s.point.x,s.point.z);if(i===0)bg.moveTo(x,y);else bg.lineTo(x,y);});bg.closePath();bg.strokeStyle='#a4b7a8';bg.lineWidth=11;bg.lineJoin='round';bg.stroke();bg.strokeStyle='#fffef6';bg.lineWidth=4;bg.stroke();
       const zones=(track.group?.userData.drsZones??[]) as {start:number;end:number}[];
-      bg.strokeStyle='#5b9c73';bg.lineWidth=4;bg.lineCap='round';
+      bg.strokeStyle='#5b9c73';bg.lineWidth=5;bg.lineCap='round';
       for(const zone of zones){
         if(!Number.isFinite(zone.start+zone.end)||!Number.isFinite(track.length)||track.length<=0)continue;
         const span=((zone.end-zone.start)%track.length+track.length)%track.length;
@@ -365,7 +419,7 @@ export class UI {
       }
     }
     ctx.drawImage(this.mapBackground!,0,0);const project=this.mapProject;
-    const target=track.sampleAt(track.checkpoints[race.nextCheckpoint]??0);let [cx,cy]=project(target.point.x,target.point.z);ctx.fillStyle='#d99a30';ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
-    const [x,y]=project(vehicle.x,vehicle.z);ctx.fillStyle='#f16a4c';ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+    const target=track.sampleAt(track.checkpoints[race.nextCheckpoint]??0),[cx,cy]=project(target.point.x,target.point.z);ctx.fillStyle='#d99a30';ctx.beginPath();ctx.arc(cx,cy,6,0,Math.PI*2);ctx.fill();
+    const [x,y]=project(vehicle.x,vehicle.z);ctx.fillStyle='#f16a4c';ctx.strokeStyle='#fff';ctx.lineWidth=4;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();ctx.stroke();
   }
 }

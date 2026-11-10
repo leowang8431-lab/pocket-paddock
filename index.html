@@ -1,2 +1,95 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="theme-color" content="#173f38"><link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta name="description" content="Pocket Paddock 口袋围场：在微缩蒙扎赛道驾驶Q版方程式赛车，挑战个人最佳圈速。"><title>Pocket Paddock · 口袋围场</title></head><body><div id="app"></div><script type="module" src="/src/main.ts"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#173f38">
+  <meta name="description" content="Pocket Paddock 口袋围场：在微缩蒙扎赛道驾驶Q版方程式赛车，挑战个人最佳圈速。">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Pocket Paddock · 口袋围场</title>
+  <style id="loading-style">
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: 14px;
+      padding: 24px;
+      overflow: auto;
+      text-align: center;
+      background: #f6f4e8;
+      color: #173f38;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    #loading[hidden] { display: none; }
+    .loading-wordmark {
+      font-size: 13px;
+      font-weight: 750;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+    .loading-wordmark::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 9px;
+      border-radius: 50%;
+      background: #ed7051;
+      vertical-align: .12em;
+    }
+    #loading-title {
+      margin: 0;
+      font-size: clamp(24px, 5vw, 38px);
+      line-height: 1.25;
+    }
+    #loading-detail {
+      margin: 0;
+      color: #486554;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    .loading-wheel {
+      box-sizing: border-box;
+      width: 28px;
+      height: 28px;
+      margin-top: 10px;
+      border: 3px solid #c5d2bc;
+      border-top-color: #327353;
+      border-radius: 50%;
+      animation: loading-wheel-spin .9s linear infinite;
+    }
+    @keyframes loading-wheel-spin { to { transform: rotate(1turn); } }
+    @media (prefers-reduced-motion: reduce) {
+      .loading-wheel { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <section id="loading" role="status" aria-atomic="true">
+    <span class="loading-wordmark">Pocket Paddock</span>
+    <h1 id="loading-title">正在载入蒙扎…</h1>
+    <p id="loading-detail">正在准备 3D 场景与赛车模型，请稍候。</p>
+    <span class="loading-wheel" aria-hidden="true"></span>
+  </section>
+  <script id="loading-bootstrap">
+    (() => {
+      const names = { monza: ["蒙扎", "Monza"], spa: ["斯帕", "Spa-Francorchamps"], monaco: ["摩纳哥", "Monaco"] };
+      const requested = new URLSearchParams(location.search).get("circuit");
+      let saved, english = false;
+      try {
+        saved = localStorage.getItem("pocket-paddock.circuit");
+        english = localStorage.getItem("pocket-paddock.language") === "en";
+      } catch {}
+      const circuit = Object.hasOwn(names, requested) ? requested : Object.hasOwn(names, saved) ? saved : "monza";
+      document.documentElement.lang = english ? "en" : "zh-CN";
+      document.getElementById("loading-title").textContent = english ? "Loading " + names[circuit][1] + "…" : "正在载入" + names[circuit][0] + "…";
+      if (english) document.getElementById("loading-detail").textContent = "Preparing the 3D circuit and car models. Please wait.";
+    })();
+  </script>
+  <div id="app"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

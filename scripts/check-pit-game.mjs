@@ -26,8 +26,8 @@ async function open(circuit,team,compound){
   await page.waitForFunction(()=>window.__PP?.snapshot().car.status==='ready'&&!document.querySelector('#start').disabled,undefined,{timeout:40000});
   await page.locator('#quality').selectOption('performance');await page.locator('#race-mode').selectOption('time-trial');await page.locator('#team-select').selectOption(team);await page.locator('#pit-compound').selectOption(compound);
   if(!await page.evaluate(()=>window.__PP.engineAudio.enabled))await page.locator('#sound').click();
-  await page.waitForFunction(()=>window.__PP.pitAudio.summary.ready&&window.__PP.pitAudio.summary.unlocked,undefined,{timeout:30000});
   await page.locator('#start').click();await page.waitForFunction(()=>window.__PP.snapshot().state==='racing',undefined,{timeout:25000});
+  await page.waitForFunction(()=>window.__PP.pitAudio.summary.ready&&window.__PP.pitAudio.summary.unlocked,undefined,{timeout:30000});
 }
 async function restart(){if((await snap()).state!=='paused')await page.keyboard.press('Escape');await page.locator('#restart').click();await page.waitForFunction(()=>window.__PP.snapshot().state==='racing',undefined,{timeout:25000});}
 
@@ -73,7 +73,7 @@ async function installObservers(label){
     const trace=[],begun=performance.now();let lastTrace=0,seen=false,serviceStart=null,serviceEnd=null,recorder=null,chunks=[],done=false,destination=null,stream=null,stopPromise=null;
     const observe=()=>{
       const s=game.snapshot(),now=performance.now();if(s.pit.active)seen=true;
-      if(now-lastTrace>100||s.pit.state!==trace.at(-1)?.phase){trace.push({wallSeconds:(now-begun)/1000,state:s.state,phase:s.pit.state,kmh:s.speed*6,x:s.x,z:s.z,heading:s.heading,raceElapsed:s.elapsed,lap:s.lap,nextCheckpoint:s.nextCheckpoint,duration:s.pit.serviceDuration,serviceElapsed:s.pit.serviceElapsed,view:s.pit.view,audio:s.pit.audio});lastTrace=now;}
+      if(now-lastTrace>100||s.pit.state!==trace.at(-1)?.phase){trace.push({wallSeconds:(now-begun)/1000,state:s.state,phase:s.pit.state,kmh:s.speedKmh,x:s.x,z:s.z,heading:s.heading,raceElapsed:s.elapsed,lap:s.lap,nextCheckpoint:s.nextCheckpoint,duration:s.pit.serviceDuration,serviceElapsed:s.pit.serviceElapsed,view:s.pit.view,audio:s.pit.audio});lastTrace=now;}
       if(s.pit.state==='service'&&serviceStart===null){serviceStart={wallTime:now,elapsed:s.pit.serviceElapsed,duration:s.pit.serviceDuration,stop:{...s.pit.stop}};stream=document.querySelector('#viewport canvas').captureStream(30);destination=ctx.createMediaStreamDestination();output.connect(destination);for(const t of destination.stream.getAudioTracks())stream.addTrack(t);const mime=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus'].find(m=>MediaRecorder.isTypeSupported(m));recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:3500000,audioBitsPerSecond:128000});recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};stopPromise=new Promise(resolve=>recorder.onstop=resolve);recorder.start(100);}
       if(serviceStart&&s.pit.state==='exit'&&serviceEnd===null)serviceEnd={wallTime:now,duration:s.pit.serviceDuration,elapsed:s.pit.serviceElapsed};
       if(serviceEnd&&now-serviceEnd.wallTime>900&&recorder?.state==='recording')recorder.stop();
@@ -112,7 +112,7 @@ try{
   const drive=await driveToEntrance(false);assert.ok(drive.brakeFrames>0);assert.equal(drive.last.pit.team,'ferrari');await shot('monza-real-drive-approach');
   await check('monza-keyboard-only-grid-to-pit-entrance',{fixture:false,brakeFrames:drive.brakeFrames,trace:drive.trace,captured:drive.last});
   // Contradictory manual inputs must not override automatic pit control.
-  await page.keyboard.down('a');await page.keyboard.down('s');await page.keyboard.down('w');await page.waitForTimeout(350);const held=await snap();for(const key of ['a','s','w'])await page.keyboard.up(key);assert.equal(held.pit.active,true);assert.ok(held.speed*6<=120.0001);assert.equal(held.drs.active,false);
+  await page.keyboard.down('a');await page.keyboard.down('s');await page.keyboard.down('w');await page.waitForTimeout(350);const held=await snap();for(const key of ['a','s','w'])await page.keyboard.up(key);assert.equal(held.pit.active,true);assert.ok(held.speedKmh<=120.0001);assert.equal(held.drs.active,false);
   await pauseProof('monza');await completeVisit('monza','soft',true);
   }
 

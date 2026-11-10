@@ -80,29 +80,47 @@ export class EngineVoice {
 }
 
 export class EngineAudio {
-  enabled=false;private ctx?:AudioContext;private voice?:EngineVoice;
-  private requested=false;
+  private ctx?:AudioContext;private voice?:EngineVoice;
   private lastState=new Powertrain().summary;private audible=false;
   private readonly legacy=new Powertrain();private lastUpdate=0;
-  async toggle(){
-    this.requested=!this.requested;
-    if(!this.requested){this.enabled=false;this.voice?.silence();return false;}
+  private lastContact=-Infinity;
+  constructor(public enabled=true){}
+  setEnabled(enabled:boolean){
+    this.enabled=enabled;
+    if(!enabled)this.voice?.silence();
+  }
+  /** Web Audio must be activated from the start or sound-control gesture. */
+  async unlock(){
+    if(!this.enabled)return;
     try{
       if(!this.ctx){this.ctx=new AudioContext({latencyHint:'interactive'});this.voice=new EngineVoice(this.ctx);}
-      await this.ctx.resume();this.enabled=this.requested;
+      if(this.ctx.state!=='running')await this.ctx.resume();
       this.voice?.apply(this.lastState,this.enabled&&this.audible);
     }catch{
-      this.enabled=false;this.requested=false;this.voice?.silence();
       if(this.ctx&&!this.voice){await this.ctx.close().catch(()=>{});this.ctx=undefined;}
     }
-    return this.enabled;
   }
   setPowertrain(state:PowertrainState,audible:boolean){this.lastState={...state};this.audible=audible;this.voice?.apply(this.lastState,this.enabled&&audible);}
+  playContact(impactSpeed:number){
+    const ctx=this.ctx;
+    if(!this.enabled||ctx?.state!=='running'||ctx.currentTime-this.lastContact<.14)return;
+    const now=ctx.currentTime;
+    this.lastContact=now;
+    const gain=ctx.createGain(),tone=ctx.createOscillator();
+    gain.gain.setValueAtTime(Math.min(.19,.025+impactSpeed*.008),now);
+    gain.gain.exponentialRampToValueAtTime(.001,now+.12);
+    tone.type='triangle';
+    tone.frequency.setValueAtTime(105+Math.min(160,impactSpeed*10),now);
+    tone.frequency.exponentialRampToValueAtTime(52,now+.1);
+    tone.connect(gain);gain.connect(ctx.destination);
+    tone.onended=()=>{tone.disconnect();gain.disconnect();};
+    tone.start(now);tone.stop(now+.13);
+  }
   /** Compatibility until callers use the shared HUD/powertrain state. */
   update(speed:number,active:boolean,throttle:boolean|number){
     const now=performance.now()/1000,dt=this.lastUpdate?Math.min(.1,Math.max(0,now-this.lastUpdate)):1/60;this.lastUpdate=now;
     this.setPowertrain(this.legacy.update(dt,{speed,throttle:Number(throttle),active}),active);
   }
-  get summary(){return{enabled:this.enabled,context:this.ctx?.state??'not-created',source:'CC0-recording-derived-mechanical-cycles',airLayers:0,audible:this.enabled&&this.audible,gear:this.lastState.gear,rpm:this.lastState.rpm};}
-  async dispose(){this.enabled=this.requested=false;this.voice?.dispose();await this.ctx?.close();this.voice=undefined;this.ctx=undefined;}
+  get summary(){return{enabled:this.enabled,context:this.ctx?.state??'not-created',source:'CC0-recording-derived-mechanical-cycles',airLayers:0,audible:this.enabled&&this.audible&&this.ctx?.state==='running',gear:this.lastState.gear,rpm:this.lastState.rpm};}
+  async dispose(){this.enabled=false;this.voice?.dispose();await this.ctx?.close();this.voice=undefined;this.ctx=undefined;}
 }

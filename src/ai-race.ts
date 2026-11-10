@@ -1,22 +1,58 @@
-import type {Track} from './track';
+import type {Track,TrackSample} from './track';
 import {WEATHER_PHYSICS,type WeatherMode} from './conditions';
 import {teams,getTeam,getDriver,DEFAULT_TEAM,type TeamId,type DriverId} from './team-catalog';
+import {RACE_CAR_HALF_LENGTH,RACE_CAR_HALF_WIDTH,resolveRaceContact,resolveWallImpulse,type RaceContactBody} from './race-contact';
+import {TRACK_SPEED_SCALE} from './speed-scale';
+import {TireSet,type TireCompound} from './tire-physics';
+import {lateralGripForSpeed} from './handling';
+import {PLAYER_GRID_DISTANCE,startGridSlot,type RaceGridSlot} from './start-grid';
+import {createMonacoDrsZones,createMonzaDrsZones,createSpaDrsZones,withinZone,type DrsZone} from './drs';
+import {AiPitRoutes,type AiPitVisit,type AiPitPhase} from './ai-pit-route';
+import {chooseAiPitCompound} from './ai-pit-strategy';
+import {PIT_SPEED_LIMIT} from './pit-lane-controller';
+import {TRACK_LIMIT_DELAY_SECONDS,TRACK_LIMIT_MARGIN,TRACK_LIMIT_PENALTY_SECONDS} from './race';
 
-export const PLAYER_GRID_DISTANCE=-12;
-export const PLAYER_GRID_LATERAL=-2.5;
-export interface AiRival {
+export {PLAYER_GRID_DISTANCE,PLAYER_GRID_LATERAL,type RaceGridSlot} from './start-grid';
+export interface RaceGrid {player:RaceGridSlot;rivals:RaceGridSlot[];}
+export interface AiRival extends RaceContactBody {
   id:string;team:TeamId;driver:DriverId;distance:number;speed:number;
-  x:number;z:number;heading:number;lateral:number;frontWheelAngle:number;
+  yawRate:number;lateral:number;frontWheelAngle:number;throttle:number;drsActive:boolean;
   lap:number;completedLaps:number;finished:boolean;finishTime:number|null;
+  compound:TireCompound;tyreWear:number;pitState:Exclude<AiPitPhase,'done'>|'idle';pitStops:number;penalty:number;
 }
 export interface RaceStanding {
   id:string;team:TeamId;driver:DriverId;progress:number;position:number;isPlayer:boolean;
   lap:number;finished:boolean;finishTime:number|null;
 }
-export interface AiPlayerObstacle {x:number;z:number;heading:number;speed:number;finished:boolean;}
-interface RivalPlan {skill:number;targetLane:number;homeLane:number;passCooldown:number;reaction:number}
+export interface AiPlayerObstacle {x:number;z:number;heading:number;speed:number;finished:boolean;pitLane?:boolean;}
+interface RivalPlan {
+  skill:number;targetLane:number;homeLane:number;passCooldown:number;reaction:number;
+  tires:TireSet;previousDistance:number;laneVelocity:number;lateralImpulse:number;yawImpulse:number;yawOffset:number;impactRecovery:number;
+  stintStart:number;lapStart:number;lapTime:number;pittedThisLap:boolean;
+  visit?:AiPitVisit;nextCompound?:TireCompound;
+  offroadTime:number;offroadCharged:boolean;
+}
+interface TrafficCar {gap:number;lateral:number;speed:number;}
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const signedAngle=(value:number)=>Math.atan2(Math.sin(value),Math.cos(value));
+const contactRangeSquared=4*(RACE_CAR_HALF_LENGTH**2+RACE_CAR_HALF_WIDTH**2);
+const maxSpeed=40*TRACK_SPEED_SCALE;
+const maxDrsSpeed=44.5*TRACK_SPEED_SCALE;
+const dryCompounds:readonly TireCompound[]=['medium','soft','hard'];
+export function createRaceGrid(count:number,random=Math.random,previousPlayer?:RaceGridSlot):RaceGrid {
+  const slots=Array.from({length:clamp(Math.floor(Number.isFinite(count)?count:5),1,10)+1},(_,i)=>startGridSlot(i));
+  for(let i=slots.length-1;i>0;i--){
+    const draw=random(),j=Number.isFinite(draw)?clamp(Math.floor(draw*(i+1)),0,i):i;
+    [slots[i],slots[j]]=[slots[j],slots[i]];
+  }
+  if(previousPlayer?.distance===slots[0].distance&&previousPlayer.lateral===slots[0].lateral){
+    const draw=random(),last=slots.length-1;
+    const rivalSlot=Number.isFinite(draw)?clamp(1+Math.floor(draw*last),1,last):last;
+    [slots[0],slots[rivalSlot]]=[slots[rivalSlot],slots[0]];
+  }
+  const [player,...rivals]=slots;
+  return {player,rivals};
+}
 
 /** Deterministic arcade opponents. Their continuous, unwrapped progress is the
  * source of both their visible position and their lap/finish results. They use
@@ -28,14 +64,21 @@ export class AiRace {
   readonly count:number;
   time=0;
   private readonly curvature:Float64Array;
+  private readonly drsZones:readonly DrsZone[];
+  private readonly pitRoutes:AiPitRoutes;
   private readonly plans:RivalPlan[]=[];
-  private touching=new Set<string>();
+  private readonly gridOrder=new Map<string,number>();
+  private playerGridDistance=PLAYER_GRID_DISTANCE;
   private playerTeam:TeamId=DEFAULT_TEAM;
   private playerDriver:DriverId=getTeam(DEFAULT_TEAM).drivers[0].id;
   private playerObstacle:AiPlayerObstacle|null=null;
-  constructor(readonly track:Track,count=5,totalLaps=3){
+  private startingWeather:WeatherMode|undefined;
+  private observedPlayer:{distance:number;lateral:number;speed:number}|null=null;
+  constructor(readonly track:Track,count=5,totalLaps=3,private readonly pitStopsEnabled=true){
     this.count=clamp(Math.floor(Number.isFinite(count)?count:5),1,10);
     this.totalLaps=clamp(Math.floor(Number.isFinite(totalLaps)?totalLaps:3),1,99);
+    this.drsZones=track.id==='spa'?createSpaDrsZones(track):track.id==='monaco'?createMonacoDrsZones(track):createMonzaDrsZones(track);
+    this.pitRoutes=new AiPitRoutes(track);
     this.curvature=new Float64Array(track.samples.length);
     const step=track.length/track.samples.length,span=3;
     for(let i=0;i<this.curvature.length;i++){
@@ -45,37 +88,53 @@ export class AiRace {
     }
     this.start();
   }
-  start(playerTeam:TeamId=DEFAULT_TEAM,playerDriver?:DriverId):void {
+  start(playerTeam:TeamId=DEFAULT_TEAM,playerDriver?:DriverId,weather?:WeatherMode,grid?:RaceGrid):void {
     this.playerTeam=playerTeam;
     this.playerDriver=playerDriver&&getDriver(playerDriver)?.teamId===playerTeam?playerDriver:getTeam(playerTeam).drivers[0].id;
-    this.time=0;this.rivals.length=0;this.plans.length=0;this.touching.clear();this.playerObstacle=null;
-    const roster=teams.filter(team=>team.id!==playerTeam);
-    // Six places in a two-column grid: the player occupies P3, left row two.
+    this.time=0;this.rivals.length=0;this.plans.length=0;this.playerObstacle=null;this.observedPlayer=null;this.startingWeather=weather;
+    const roster=teams.filter(team=>team.id!==playerTeam),playerSlot=grid?.player??startGridSlot(2);
+    this.playerGridDistance=playerSlot.distance;
+    this.gridOrder.clear();
+    const slots=[{id:'player',...playerSlot}];
     const skills=[.955,1,.975,.94,.985,.965,.99,.95,.98,.96];
     for(let i=0;i<this.count;i++){
-      const slot=i<2?i:i+1,row=Math.floor(slot/2);
+      const slot=grid?.rivals[i]??startGridSlot(i<2?i:i+1);
       const team=roster[i%roster.length],driver=team.drivers[i>=roster.length?1:0];
-      const lateral=slot%2?-PLAYER_GRID_LATERAL:PLAYER_GRID_LATERAL;
-      const rival:AiRival={id:`ai-${i+1}`,team:team.id,driver:driver.id,distance:-5-row*7,speed:0,x:0,z:0,heading:0,lateral,frontWheelAngle:0,lap:1,completedLaps:0,finished:false,finishTime:null};
-      this.rivals.push(rival);this.plans.push({skill:skills[i],targetLane:lateral,homeLane:lateral,passCooldown:0,reaction:i*.12});this.place(rival,0);
+      const {distance,lateral}=slot;
+      const compound=weather==='rainy'?'wet':dryCompounds[i%dryCompounds.length];
+      const rival:AiRival={id:`ai-${i+1}`,team:team.id,driver:driver.id,distance,speed:0,x:0,z:0,heading:0,vx:0,vz:0,yawRate:0,lateral,frontWheelAngle:0,throttle:0,drsActive:false,lap:1,completedLaps:0,finished:false,finishTime:null,compound,tyreWear:0,pitState:'idle',pitStops:0,penalty:0};
+      const tires=new TireSet();
+      tires.fit(compound,weather);
+      this.rivals.push(rival);
+      slots.push({id:rival.id,...slot});
+      this.plans.push({skill:skills[i],targetLane:lateral,homeLane:lateral,passCooldown:0,reaction:i*.12,tires,previousDistance:rival.distance,laneVelocity:0,lateralImpulse:0,yawImpulse:0,yawOffset:0,impactRecovery:0,
+        stintStart:distance,lapStart:0,lapTime:0,pittedThisLap:false,offroadTime:0,offroadCharged:false});
+      this.place(rival,0);
     }
+    slots.sort((a,b)=>b.distance-a.distance||a.lateral-b.lateral).forEach((slot,i)=>this.gridOrder.set(slot.id,i));
   }
   private curvatureAt(distance:number):number {
     const index=((Math.floor(distance/this.track.length*this.curvature.length)%this.curvature.length)+this.curvature.length)%this.curvature.length;
     return this.curvature[index];
   }
-  /** The actual player pose is observed, never moved or assigned AI progress.
-   * Other circuits deliberately ignore this new Monaco traffic input. */
+  /** The actual player pose provides traffic input on every circuit. */
   setPlayerObstacle(obstacle:AiPlayerObstacle|null):void {
     this.playerObstacle=obstacle&&Number.isFinite(obstacle.x+obstacle.z+obstacle.heading+obstacle.speed)?{...obstacle}:null;
   }
-  private monacoPlayerAt(distance:number){
-    const player=this.playerObstacle;if(!player||player.finished)return null;
+  private observePlayer(){
+    const player=this.playerObstacle;if(!player||player.finished||player.pitLane)return null;
     const projection=this.track.roadProjectionAt(player.x,player.z);
     if(projection.gap>this.track.widthAt(projection.distance)/2+2.9)return null;
     const sample=this.track.sampleAt(projection.distance),lateral=(player.x-sample.point.x)*sample.right.x+(player.z-sample.point.z)*sample.right.z;
-    const gap=signedDistance(projection.distance-((distance%this.track.length+this.track.length)%this.track.length),this.track.length);
-    return{gap,lateral,speed:Math.max(0,player.speed*Math.cos(player.heading-Math.atan2(sample.tangent.x,sample.tangent.z)))};
+    return{distance:projection.distance,lateral,speed:player.speed*Math.cos(player.heading-Math.atan2(sample.tangent.x,sample.tangent.z))};
+  }
+  private playerAt(distance:number){
+    const player=this.observedPlayer;
+    return player&&{gap:signedDistance(player.distance-distance,this.track.length),lateral:player.lateral,speed:player.speed};
+  }
+  private onRaceLane(index:number){
+    const visit=this.plans[index].visit;
+    return !visit||visit.laneArc<0||visit.laneArc>=this.pitRoutes.laneLength;
   }
   /** The provided GLB occupies a 2.70-unit circle around its actual origin.
    * Reserve 2.90 on Monaco, including trim and width changes across the car.
@@ -98,22 +157,18 @@ export class AiRace {
     if(merging)plan.targetLane=0;
     else if(Math.abs(plan.targetLane)<.001)plan.targetLane=plan.homeLane;
     const ahead=this.rivals.flatMap((other,j)=>{
-      if(other===rival||other.finished)return[];
+      if(other===rival||other.finished||!this.onRaceLane(j))return[];
       const gap=signedDistance(other.distance-rival.distance,this.track.length);
       // A deterministic priority also separates two cars leaving the same row.
       return gap>.02||Math.abs(gap)<=.02&&j<index?[{other,gap:Math.max(0,gap)}]:[];
     });
-    const player=this.monacoPlayerAt(rival.distance);
+    const player=this.playerAt(rival.distance);
     if(player&&player.gap>=-.02)ahead.push({other:{...rival,id:'player',lateral:player.lateral,speed:player.speed},gap:Math.max(0,player.gap)});
     ahead.sort((a,b)=>a.gap-b.gap);
     const observed=ahead.filter(entry=>entry.gap<Math.max(42,rival.speed*1.8));
     const blocker=observed.find(entry=>merging||Math.abs(entry.other.lateral-rival.lateral)<2.9);
     if(blocker){
-      if(!merging&&this.time>2.5&&plan.passCooldown===0){
-        const passingLane=-Math.sign(rival.lateral||plan.targetLane||plan.homeLane)*Math.min(2.8,limit);
-        const laneFree=!this.rivals.some(other=>other!==rival&&!other.finished&&Math.abs(other.lateral-passingLane)<2.9&&Math.abs(signedDistance(other.distance-rival.distance,this.track.length))<12)&&!(player&&Math.abs(player.lateral-passingLane)<2.9&&Math.abs(player.gap)<12);
-        if(laneFree){plan.targetLane=passingLane;plan.passCooldown=3;}
-      }
+      if(!merging)this.considerPass(rival,plan,{gap:blocker.gap,lateral:blocker.other.lateral,speed:blocker.other.speed},player,target,limit);
       if(merging||Math.abs(rival.lateral-blocker.other.lateral)<2.9){
         const closing=Math.max(0,rival.speed-blocker.other.speed),desiredGap=6.5+rival.speed*(weather==='rainy'?.9:.7)+closing*.5;
         target=Math.min(target,Math.max(0,blocker.other.speed+(blocker.gap-desiredGap)*.85));
@@ -124,105 +179,341 @@ export class AiRace {
     for(let ahead=3;ahead<=100;ahead+=3){const excess=Math.abs(rival.lateral)-this.monacoLaneLimitAt(rival.distance+ahead);if(excess>.05)target=Math.min(target,ahead/(excess/.95+.45));}
     return target;
   }
+  private openTrafficTarget(rival:AiRival,plan:RivalPlan,target:number,weather:WeatherMode):number {
+    const player=this.playerAt(rival.distance);
+    const lookahead=Math.max(22,rival.speed*1.4);
+    let blocker:TrafficCar|null=player&&player.gap>0&&player.gap<lookahead&&Math.abs(player.lateral-rival.lateral)<2.8?player:null;
+    for(let i=0;i<this.rivals.length;i++){
+      const other=this.rivals[i];
+      if(other===rival||other.finished||!this.onRaceLane(i)||Math.abs(other.lateral-rival.lateral)>=2.8)continue;
+      const gap=signedDistance(other.distance-rival.distance,this.track.length);
+      if(gap>0&&gap<(blocker?.gap??lookahead))blocker={gap,lateral:other.lateral,speed:other.speed};
+    }
+    if(!blocker)return target;
+    this.considerPass(rival,plan,blocker,player,target,2.8);
+    const closing=Math.max(0,rival.speed-blocker.speed),desiredGap=5.8+rival.speed*(weather==='rainy'?.32:.23)+closing*.6;
+    return Math.min(target,Math.max(0,blocker.speed+(blocker.gap-desiredGap)*1.2));
+  }
+  private considerPass(rival:AiRival,plan:RivalPlan,blocker:TrafficCar,player:TrafficCar|null,target:number,limit:number):void {
+    if(this.time<2.5||plan.passCooldown>0||plan.impactRecovery>0||Math.abs(plan.targetLane-rival.lateral)>.3)return;
+    const advantage=target-blocker.speed,closing=rival.speed-blocker.speed;
+    // A slower car only warrants a pass if we can catch it in a few seconds.
+    if(advantage<1.15||blocker.gap>10+Math.max(0,closing,advantage)*3.5)return;
+    const passingLane=-Math.sign(blocker.lateral||rival.lateral||plan.homeLane)*limit;
+    if(Math.abs(passingLane-blocker.lateral)<2.75||Math.abs(passingLane-plan.targetLane)<.4)return;
+    const changeTime=Math.abs(passingLane-rival.lateral)/.95;
+    const passSpeed=Math.max(rival.speed,Math.min(target,blocker.speed+6));
+    const sideBySideDistance=Math.max(22,passSpeed*(changeTime+1));
+    const monaco=this.track.id==='monaco';
+    for(let d=0;d<=sideBySideDistance;d+=10){
+      const station=rival.distance+d;
+      const roadLimit=monaco?this.monacoLaneLimitAt(station):this.track.widthAt(station)/2-2.9;
+      if(roadLimit+.05<Math.abs(passingLane)||Math.abs(this.curvatureAt(station))>.045)return;
+    }
+    const conflicts=(gap:number,speed:number)=> {
+      const after=gap+(speed-passSpeed)*changeTime;
+      const rear=gap+(speed-rival.speed)*changeTime;
+      return Math.min(gap,after)<8+passSpeed*.22&&Math.max(gap,rear)>-7-Math.max(0,speed)*.19;
+    };
+    if(player&&Math.abs(player.lateral-passingLane)<2.85&&conflicts(player.gap,player.speed))return;
+    for(let i=0;i<this.rivals.length;i++){
+      const other=this.rivals[i];
+      if(other===rival||other.finished||!this.onRaceLane(i))continue;
+      if(Math.min(Math.abs(other.lateral-passingLane),Math.abs(this.plans[i].targetLane-passingLane))>=2.85)continue;
+      if(conflicts(signedDistance(other.distance-rival.distance,this.track.length),other.speed))return;
+    }
+    plan.targetLane=passingLane;
+    plan.passCooldown=changeTime+1.25;
+  }
   /** Look far enough ahead to brake before a tight turn, rather than changing
    * speed only after the car has already reached the corner apex. */
   targetSpeed(rival:AiRival,weather:WeatherMode='sunny'):number {
-    const index=this.rivals.indexOf(rival),skill=this.plans[index]?.skill??.96;
-    const wet=WEATHER_PHYSICS[weather],top=37.8*skill*(weather==='rainy'?.90:1),braking=23*wet.braking;
+    const plan=this.plans[this.rivals.indexOf(rival)],skill=plan?.skill??.96;
+    const wet=WEATHER_PHYSICS[weather],grip=plan?.tires.gripMultiplier??1;
+    const cap=this.drsAvailable(rival,weather)?maxDrsSpeed:maxSpeed;
+    const top=cap*(.97+.03*skill)*(weather==='rainy'?.91:1)*(plan?.tires.speedMultiplier??1);
+    const narrow=this.track.id==='monaco';
+    const braking=(narrow?28:30)*wet.braking*grip;
+    const margin=narrow?.77:.98;
+    const brakingBuffer=narrow?5:4;
+    const mechanical=margin*lateralGripForSpeed(0,weather)*grip;
+    const aero=margin*8.5*wet.grip*grip/(40*40);
     let target=top;
     for(let ahead=0;ahead<=95;ahead+=5){
       const curve=Math.abs(this.curvatureAt(rival.distance+ahead));
-      // Conservative cornering accounts for the AI's perfect centre-line path.
-      // It keeps a clean human lap competitive without speed rubber-banding.
-      const denominator=Math.max(.001,curve-.0015*wet.grip);
-      const corner=Math.min(top,Math.sqrt(7.5*wet.grip/denominator)*skill);
-      target=Math.min(target,Math.sqrt(corner*corner+2*braking*Math.max(0,ahead-5)));
+      // Solve curvature × speed² against the same mechanical and aero grip
+      // as the player, with a margin for traffic and the centre-line route.
+      const corner=Math.min(top,Math.sqrt(mechanical/Math.max(.001,curve-aero))*skill);
+      target=Math.min(target,Math.sqrt(corner*corner+2*braking*Math.max(0,ahead-brakingBuffer)));
     }
     return target;
+  }
+  private drsAvailable(rival:AiRival,weather:WeatherMode):boolean {
+    return weather==='sunny'&&rival.speed>13&&this.drsZones.some(zone=>withinZone(rival.distance,zone,this.track.length));
+  }
+  private considerPit(index:number,weather:WeatherMode){
+    const rival=this.rivals[index],plan=this.plans[index],length=this.track.length,entry=this.pitRoutes.entryDistance;
+    if(!this.pitStopsEnabled||rival.distance<=plan.previousDistance||rival.speed<=.1)return;
+    const gate=entry+(Math.floor((plan.previousDistance-entry)/length)+1)*length;
+    if(rival.distance<gate||gate<0)return;
+    const bay=this.pitRoutes.bayId(rival.team);
+    if(this.plans.some(other=>other.visit&&(other.visit.bayId===bay||other.visit.laneArc<16)))return;
+    if(this.playerObstacle?.pitLane&&this.pitRoutes.bayId(this.playerTeam)===bay)return;
+    const remainingDistance=this.totalLaps*length-rival.distance;
+    const lapTime=plan.lapTime||length/(weather==='rainy'?28:31);
+    const skippedTrack=(this.pitRoutes.exitDistance-entry+length)%length;
+    // Tight pit entries and exits take longer than cruising at the limiter.
+    const approachLoss=this.track.id==='monaco'?15:this.track.id==='spa'?11:15;
+    const pitLoss=Math.max(8,this.pitRoutes.laneLength/PIT_SPEED_LIMIT+approachLoss-skippedTrack/length*lapTime);
+    const compound=chooseAiPitCompound({compound:rival.compound,wear:rival.tyreWear,stintDistance:rival.distance-plan.stintStart,remainingDistance,lapLength:length,lapTime,pitLoss,weather});
+    if(!compound)return;
+    plan.nextCompound=compound;
+    plan.visit=this.pitRoutes.begin(rival,rival.team,2+2*Math.random());
+    plan.pittedThisLap=true;rival.pitState='entry';rival.drsActive=false;
+  }
+  private pitTrafficLimit(index:number,visit:AiPitVisit){
+    const rival=this.rivals[index],fx=Math.sin(rival.heading),fz=Math.cos(rival.heading);
+    let limit=PIT_SPEED_LIMIT;
+    const follow=(other:Pick<AiPlayerObstacle,'x'|'z'|'heading'|'speed'>)=>{
+      const dx=other.x-rival.x,dz=other.z-rival.z;
+      const gap=dx*fx+dz*fz;
+      if(gap<=0||gap>22||Math.abs(dx*fz-dz*fx)>2.75)return;
+      const speed=Math.max(0,other.speed*Math.cos(other.heading-rival.heading));
+      limit=Math.min(limit,Math.max(0,speed+(gap-6.2)*1.55));
+    };
+    for(const other of this.rivals)if(other!==rival&&!other.finished)follow(other);
+    if(this.playerObstacle&&!this.playerObstacle.finished)follow(this.playerObstacle);
+    if(visit.phase==='exit'&&visit.laneArc>=this.pitRoutes.laneLength-12&&visit.laneArc<this.pitRoutes.laneLength-2){
+      // Yield at the merge if a faster car on the main track is about to pass.
+      const merge=this.pitRoutes.exitDistance;
+      const approaching=(distance:number,speed:number)=>{
+        const gap=signedDistance(merge-distance,this.track.length);
+        return speed>12&&gap>-6&&gap<speed*.9;
+      };
+      if(this.rivals.some((other,j)=>other!==rival&&!other.finished&&this.onRaceLane(j)&&approaching(other.distance,other.speed))||
+        this.observedPlayer&&approaching(this.observedPlayer.distance,this.observedPlayer.speed))limit=0;
+    }
+    return limit;
+  }
+  private drivePit(index:number,dt:number,weather:WeatherMode){
+    const rival=this.rivals[index],plan=this.plans[index],visit=plan.visit!;
+    const oldPhase=visit.phase;
+    visit.step(rival,dt,oldPhase==='service'?PIT_SPEED_LIMIT:this.pitTrafficLimit(index,visit));
+    rival.drsActive=false;
+    if(oldPhase==='service'&&visit.phase==='exit'){
+      const compound=plan.nextCompound!;
+      plan.tires.fit(compound,weather);
+      rival.compound=compound;rival.tyreWear=0;rival.pitStops++;
+    }
+    if(visit.phase==='done'){
+      plan.visit=undefined;plan.nextCompound=undefined;plan.targetLane=plan.homeLane;
+      plan.stintStart=rival.distance;
+      plan.laneVelocity=plan.lateralImpulse=plan.yawImpulse=plan.yawOffset=plan.impactRecovery=0;
+    }
+    rival.pitState=visit.phase==='done'?'idle':visit.phase;
   }
   update(dt:number,weather:WeatherMode='sunny'):void {
     if(!Number.isFinite(dt)||dt<=0)return;
     // Bound individual integration steps for callers other than the game's
     // 120 Hz fixed clock. Splitting preserves acceleration and finish ordering.
     if(dt>1/60){let remaining=dt;while(remaining>1e-9){const step=Math.min(1/60,remaining);this.update(step,weather);remaining-=step;}return;}
+    if(this.startingWeather===undefined){
+      this.startingWeather=weather;
+      if(weather==='rainy')this.plans.forEach((plan,i)=>{plan.tires.fit('wet',weather);this.rivals[i].compound='wet';});
+    }
     const started=this.time;this.time+=dt;
     const wet=WEATHER_PHYSICS[weather];
+    this.observedPlayer=this.observePlayer();
     for(let i=0;i<this.rivals.length;i++){
       const rival=this.rivals[i],plan=this.plans[i];
-      if(rival.finished||this.time<plan.reaction)continue;
+      plan.previousDistance=rival.distance;
+      const waitingForStart=this.time<plan.reaction;
+      if(rival.finished||waitingForStart&&plan.impactRecovery===0)continue;
+      if(plan.visit){this.drivePit(i,dt,weather);continue;}
       plan.passCooldown=Math.max(0,plan.passCooldown-dt);
       let target=this.targetSpeed(rival,weather);
       if(this.track.id==='monaco')target=this.monacoTrafficTarget(rival,i,target,this.monacoLanePreview(rival),weather);
-      else{
-      const ahead=this.rivals.filter(other=>other!==rival&&!other.finished).map(other=>({other,gap:(other.distance-rival.distance+this.track.length)%this.track.length}));
-      const blocker=ahead.filter(entry=>entry.gap>0&&entry.gap<14&&Math.abs(entry.other.lateral-rival.lateral)<2.7).sort((a,b)=>a.gap-b.gap)[0];
-      if(blocker&&this.time>2.5){
-        const passingLane=-Math.sign(rival.lateral||plan.targetLane)*2.8;
-        const laneFree=!this.rivals.some(other=>other!==rival&&!other.finished&&Math.abs(other.lateral-passingLane)<2.6&&Math.abs(signedDistance(other.distance-rival.distance,this.track.length))<11);
-        if(laneFree&&plan.passCooldown===0){plan.targetLane=passingLane;plan.passCooldown=3;}
-        // A safe queue while moving across; prevents AI cars interpenetrating.
-        if(Math.abs(rival.lateral-blocker.other.lateral)<2.5&&blocker.gap<8)target=Math.min(target,Math.max(0,blocker.other.speed+(blocker.gap-5)*1.1));
-      }
-      }
-      const acceleration=12.4*wet.acceleration*(1-rival.speed/55),braking=25*wet.braking;
+      else target=this.openTrafficTarget(rival,plan,target,weather);
+      const offRoad=Math.abs(rival.lateral)>this.track.widthAt(rival.distance)/2;
+      const surface=offRoad?this.track.surfaceAt(rival.x,rival.z):'asphalt';
+      if(surface!=='asphalt')target=Math.min(target,surface==='grass'?13:17);
+      target*=1-.32*Math.min(1,Math.abs(plan.yawOffset));
+      const grip=plan.tires.gripMultiplier;
+      const lateralDemand=this.curvatureAt(rival.distance)*rival.speed**2;
+      const lateralGrip=lateralGripForSpeed(rival.speed,weather,surface);
+      const gripUse=lateralDemand/Math.max(.1,lateralGrip*grip);
+      const traction=Math.sqrt(Math.max(0,1-gripUse**2));
+      const engine=15.5*TRACK_SPEED_SCALE*wet.acceleration*Math.max(0,1-rival.speed/(55*TRACK_SPEED_SCALE));
+      const acceleration=Math.min(engine,30*wet.grip*grip*traction);
+      const steeringAuthority=1-.8*clamp(plan.impactRecovery/.32,0,1);
+      const braking=32.5*wet.braking*grip*steeringAuthority;
       const gradeForce=5.886*Math.sin(Math.atan(this.track.gradeAt(rival.distance)));
-      rival.speed=clamp(rival.speed+clamp(target-rival.speed,-braking*dt,acceleration*dt)-gradeForce*dt,0,40);
-      const previousDistance=rival.distance,next=previousDistance+rival.speed*dt,finish=this.totalLaps*this.track.length;
-      const previousLateral=rival.lateral;
-      const laneRate=this.track.id==='monaco'?Math.min(.95,rival.speed*.15):.95;
-      rival.lateral+=clamp(plan.targetLane-rival.lateral,-laneRate*dt,laneRate*dt);
-      if(next>=finish){
-        rival.distance=finish;rival.finished=true;rival.finishTime=started+dt*(finish-previousDistance)/Math.max(1e-9,next-previousDistance);rival.speed=0;
-      }else rival.distance=next;
-      rival.completedLaps=Math.min(this.totalLaps,Math.floor(Math.max(0,rival.distance)/this.track.length+1e-10));
-      rival.lap=Math.min(this.totalLaps,rival.completedLaps+1);
-      this.place(rival,(rival.lateral-previousLateral)/dt);
+      const drive=waitingForStart?0:clamp((target-rival.speed)/dt,-braking,acceleration*steeringAuthority);
+      rival.throttle=acceleration>0?Math.max(0,drive/acceleration):0;
+      rival.drsActive=!offRoad&&drive>0&&this.drsAvailable(rival,weather);
+      const minimumSpeed=Math.min(0,rival.speed);
+      rival.speed=clamp(rival.speed+(drive-gradeForce)*dt,minimumSpeed,Math.max(target,rival.speed));
+      const x=rival.x,z=rival.z,heading=rival.heading;
+      const laneRate=Math.min(.95,Math.abs(rival.speed)*.15)*steeringAuthority;
+      const laneError=plan.targetLane-rival.lateral,laneAcceleration=6.5;
+      const wantedLaneVelocity=Math.sign(laneError)*Math.min(laneRate,Math.sqrt(2*laneAcceleration*Math.abs(laneError)));
+      plan.laneVelocity+=clamp(wantedLaneVelocity-plan.laneVelocity,-laneAcceleration*dt,laneAcceleration*dt);
+      if(Math.abs(laneError)<1e-9||plan.laneVelocity*laneError>0&&Math.abs(plan.laneVelocity*dt)>Math.abs(laneError))plan.laneVelocity=laneError/dt;
+      const lateralVelocity=plan.laneVelocity+plan.lateralImpulse;
+      rival.lateral+=lateralVelocity*dt;
+      rival.distance+=rival.speed*dt;
+      // Tires scrub the sideways momentum and steer back into line over time.
+      // The first movement after an impact still uses the received impulse.
+      const scrub=Math.min(Math.abs(plan.lateralImpulse)*3.6,lateralGrip*grip*.78);
+      plan.lateralImpulse-=Math.sign(plan.lateralImpulse)*scrub*dt;
+      plan.yawOffset=signedAngle(plan.yawOffset+plan.yawImpulse*dt);
+      const align=-15*plan.yawOffset-7*plan.yawImpulse;
+      plan.yawImpulse+=clamp(align,-grip*13,grip*13)*dt;
+      plan.impactRecovery=Math.max(0,plan.impactRecovery-dt);
+      const sample=this.place(rival,plan.laneVelocity,plan.yawOffset);
+      rival.vx=(rival.x-x)/dt;rival.vz=(rival.z-z)/dt;
+      rival.yawRate=signedAngle(rival.heading-heading)/dt;
+      if(this.track.id==='monaco'&&(Math.abs(plan.lateralImpulse)>.05||Math.abs(plan.yawOffset)>.015||Math.abs(rival.lateral)>2.81)){
+        this.recoverFromWall(rival,plan,sample);
+      }
+      plan.tires.step({
+        dt,speed:rival.speed,lateralSpeed:lateralVelocity,yawRate:rival.yawRate,steerAngle:rival.frontWheelAngle,
+        longitudinalDemand:drive,lateralDemand,
+        longitudinalGrip:26*wet.braking,lateralGrip,weather,surface,
+      });
+      rival.tyreWear=plan.tires.summary.wear;
+      this.considerPit(i,weather);
+    }
+    const finish=this.totalLaps*this.track.length;
+    for(let i=0;i<this.rivals.length;i++){
+      const rival=this.rivals[i];
+      if(rival.finished||this.plans[i].visit)continue;
+      for(let j=i+1;j<this.rivals.length;j++)if(!this.rivals[j].finished&&!this.plans[j].visit)this.contactRival(i,this.rivals[j],dt,j);
+    }
+    for(let i=0;i<this.rivals.length;i++){
+      const rival=this.rivals[i],plan=this.plans[i];
+      if(rival.finished)continue;
+      if(!plan.visit&&Math.abs(rival.lateral)>this.track.widthAt(rival.distance)/2+TRACK_LIMIT_MARGIN){
+        plan.offroadTime+=dt;
+        if(!plan.offroadCharged&&plan.offroadTime>=TRACK_LIMIT_DELAY_SECONDS){rival.penalty+=TRACK_LIMIT_PENALTY_SECONDS;plan.offroadCharged=true;}
+      }else{plan.offroadTime=0;plan.offroadCharged=false;}
+      const length=this.track.length;
+      if(Math.floor(rival.distance/length)>Math.floor(plan.previousDistance/length)){
+        if(plan.previousDistance>=0&&!plan.pittedThisLap&&!plan.visit)plan.lapTime=clamp(this.time-plan.lapStart,length/45,length/12);
+        plan.lapStart=this.time;plan.pittedThisLap=!!plan.visit;
+      }
+      if(rival.distance>=finish){
+        rival.finishTime=started+dt*clamp((finish-plan.previousDistance)/Math.max(1e-9,rival.distance-plan.previousDistance),0,1)+rival.penalty;
+        rival.distance=finish;rival.finished=true;rival.speed=rival.vx=rival.vz=rival.yawRate=rival.throttle=0;
+        rival.drsActive=false;
+        this.place(rival,0);
+      }
+      this.updateLap(rival);
     }
   }
-  private place(rival:AiRival,laneVelocity:number):void {
+  private updateLap(rival:AiRival):void {
+    rival.completedLaps=Math.min(this.totalLaps,Math.floor(Math.max(0,rival.distance)/this.track.length+1e-10));
+    rival.lap=Math.min(this.totalLaps,rival.completedLaps+1);
+  }
+  private place(rival:AiRival,laneVelocity:number,yawOffset=0):TrackSample {
     const sample=this.track.sampleAt(rival.distance);
     rival.x=sample.point.x+sample.right.x*rival.lateral;rival.z=sample.point.z+sample.right.z*rival.lateral;
     if(this.track.id==='monaco'){
       const curve=this.curvatureAt(rival.distance),along=Math.max(.25,1-curve*rival.lateral),steeringLimit=this.track.steeringAngleForSpeed?.(rival.speed)??.56;
-      rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(rival.speed*along,2));
+      rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(Math.abs(rival.speed)*along,2))+yawOffset;
       rival.frontWheelAngle=clamp(Math.atan(curve*3.1/along),-steeringLimit,steeringLimit);
     }else{
-      rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(rival.speed,2));
+      rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(Math.abs(rival.speed),2))+yawOffset;
       rival.frontWheelAngle=clamp(Math.atan(this.curvatureAt(rival.distance)*3.1),-.25,.25);
     }
+    return sample;
   }
   standings(playerProgress:number,playerFinished=false,playerFinishTime?:number):RaceStanding[]{
-    const progress=Number.isFinite(playerProgress)?playerProgress:PLAYER_GRID_DISTANCE;
+    const progress=Number.isFinite(playerProgress)?playerProgress:this.playerGridDistance;
     const player:RaceStanding={id:'player',team:this.playerTeam,driver:this.playerDriver,progress,position:0,isPlayer:true,lap:Math.min(this.totalLaps,Math.floor(Math.max(0,progress)/this.track.length)+1),finished:playerFinished,finishTime:playerFinished&&Number.isFinite(playerFinishTime)?playerFinishTime!:null};
     const rows:RaceStanding[]=[player,...this.rivals.map(r=>({id:r.id,team:r.team,driver:r.driver,progress:r.distance,position:0,isPlayer:false,lap:r.lap,finished:r.finished,finishTime:r.finishTime}))];
     rows.sort((a,b)=>{
       if(a.finished!==b.finished)return a.finished?-1:1;
       if(a.finished&&b.finished){const delta=(a.finishTime??Infinity)-(b.finishTime??Infinity);if(delta)return delta;}
-      return b.progress-a.progress||Number(b.isPlayer)-Number(a.isPlayer)||a.id.localeCompare(b.id);
+      return b.progress-a.progress||this.gridOrder.get(a.id)!-this.gridOrder.get(b.id)!;
     });rows.forEach((row,i)=>{row.position=i+1;});return rows;
   }
-  /** Bounded physical separation and speed loss, never a progress teleport.
-   * Finished rivals leave the active grid and cannot block the finish line. */
-  contact(x:number,z:number,heading:number,speed:number,dt:number):{x:number;z:number;speed:number;hit:boolean}{
-    if(!Number.isFinite(dt)||dt<=0)return{x,z,speed,hit:false};
-    let hit=false;const nextTouching=new Set<string>();
-    for(const rival of this.rivals){
-      if(rival.finished)continue;
-      const dx=x-rival.x,dz=z-rival.z,rightX=Math.cos(rival.heading),rightZ=-Math.sin(rival.heading),forwardX=Math.sin(rival.heading),forwardZ=Math.cos(rival.heading);
-      const side=dx*rightX+dz*rightZ,along=dx*forwardX+dz*forwardZ;
-      const radius=Math.hypot(side/2.25,along/4.1);
-      if(radius>=1)continue;
-      hit=true;nextTouching.add(rival.id);
-      let nx=side/(2.25*2.25)*rightX+along/(4.1*4.1)*forwardX,nz=side/(2.25*2.25)*rightZ+along/(4.1*4.1)*forwardZ;
-      const magnitude=Math.hypot(nx,nz);if(magnitude<1e-9){nx=Math.cos(heading);nz=-Math.sin(heading);}else{nx/=magnitude;nz/=magnitude;}
-      const push=Math.min((1-radius)*2.25,.18+dt*5);x+=nx*push;z+=nz*push;
-      if(!this.touching.has(rival.id)){
-        const alignment=Math.max(0,Math.cos(heading-rival.heading));
-        const closing=Math.max(0,Math.abs(speed)-rival.speed*alignment);
-        const factor=clamp(.91-closing*.008,.58,.91);speed*=factor;rival.speed=Math.max(0,rival.speed-Math.min(3,closing*.18));
-      }
+  private recoverFromWall(rival:AiRival,plan:RivalPlan,{point,right,tangent}:TrackSample):void {
+    // Use the rendered Monaco barriers during contact recovery. Test the
+    // whole rotated car against their side planes, not just its centre.
+    const side=Math.sign(rival.lateral),fx=Math.sin(rival.heading),fz=Math.cos(rival.heading);
+    const walls=this.track.barrierSegmentsAt(rival.x+side*right.x*2,rival.z+side*right.z*2);
+    let correction=0,normalX=0,normalZ=0,contactOffset=0;
+    for(const wall of walls){
+      if(point.y+1.3<wall.bottom||point.y>wall.top+.2)continue;
+      const dx=wall.bx-wall.ax,dz=wall.bz-wall.az,length=Math.hypot(dx,dz);
+      if(length===0)continue;
+      const tx=dx/length,tz=dz/length;
+      const roadSide=Math.sign((point.x-wall.ax)*tz-(point.z-wall.az)*tx);
+      const nx=tz*roadSide,nz=-tx*roadSide,inward=-(nx*right.x+nz*right.z)*side;
+      if(inward<.55)continue;
+      const forwardAlong=Math.abs(fx*tx+fz*tz),forwardAcross=Math.abs(fx*nx+fz*nz);
+      const halfAlong=RACE_CAR_HALF_LENGTH*forwardAlong+RACE_CAR_HALF_WIDTH*forwardAcross;
+      const along=(rival.x-wall.ax)*tx+(rival.z-wall.az)*tz;
+      if(along< -halfAlong||along>length+halfAlong)continue;
+      const halfAcross=RACE_CAR_HALF_LENGTH*forwardAcross+RACE_CAR_HALF_WIDTH*forwardAlong;
+      const wallGap=(rival.x-wall.ax)*nx+(rival.z-wall.az)*nz;
+      const visibleEdge=halfAcross+.10;
+      const push=(wall.radius+visibleEdge-wallGap)/inward;
+      if(push>correction){correction=push;normalX=nx;normalZ=nz;contactOffset=visibleEdge;}
     }
-    this.touching=nextTouching;return{x,z,speed,hit};
+    if(correction<=0)return;
+    rival.lateral-=side*correction;
+    rival.x-=side*right.x*correction;rival.z-=side*right.z*correction;
+    const {vx,vz,yawRate}=rival;
+    resolveWallImpulse(rival,normalX,normalZ,rival.x-normalX*contactOffset,rival.z-normalZ*contactOffset);
+    const dvx=rival.vx-vx,dvz=rival.vz-vz;
+    const along=Math.max(.3,1-this.curvatureAt(rival.distance)*rival.lateral);
+    rival.speed+=(dvx*tangent.x+dvz*tangent.z)/along;
+    plan.lateralImpulse+=dvx*right.x+dvz*right.z;
+    plan.yawImpulse+=rival.yawRate-yawRate;
+  }
+  private applyContact(index:number,x:number,z:number,vx:number,vz:number,yawRate:number):void {
+    const rival=this.rivals[index],plan=this.plans[index];
+    const dx=rival.x-x,dz=rival.z-z,dvx=rival.vx-vx,dvz=rival.vz-vz,dyaw=rival.yawRate-yawRate;
+    if(dx===0&&dz===0&&dvx===0&&dvz===0&&dyaw===0)return;
+    const sample=this.track.sampleAt(rival.distance),{tangent,right}=sample;
+    const along=Math.max(.3,1-this.curvatureAt(rival.distance)*rival.lateral);
+    // Project only the correction/impulse. Reprojecting the full car can jump
+    // to a different branch where the circuit folds back or crosses itself.
+    rival.distance+=(dx*tangent.x+dz*tangent.z)/along;
+    rival.lateral+=dx*right.x+dz*right.z;
+    rival.speed+=(dvx*tangent.x+dvz*tangent.z)/along;
+    plan.lateralImpulse+=dvx*right.x+dvz*right.z;
+    plan.yawImpulse+=dyaw;
+    const impulse=Math.hypot(dvx,dvz)+Math.abs(dyaw);
+    if(impulse>.8)plan.impactRecovery=Math.max(plan.impactRecovery,Math.min(.32,.08+.025*impulse));
+    if(this.track.id==='monaco')this.recoverFromWall(rival,plan,sample);
+    this.updateLap(rival);
+  }
+  private contactRival(index:number,other:RaceContactBody,dt:number,otherIndex?:number):number {
+    const rival=this.rivals[index],dx=other.x-rival.x,dz=other.z-rival.z;
+    if(dx*dx+dz*dz>=contactRangeSquared)return 0;
+    if(this.track.id!=='monza'){
+      const rivalHeight=this.track.sampleAt(rival.distance).point.y;
+      const otherHeight=otherIndex===undefined?this.track.heightAt(other.x,other.z):this.track.sampleAt(this.rivals[otherIndex].distance).point.y;
+      if(Math.abs(rivalHeight-otherHeight)>2.4)return 0;
+    }
+    const {x,z,vx,vz,yawRate}=rival;
+    const bx=other.x,bz=other.z,bvx=other.vx,bvz=other.vz,byaw=other.yawRate??0;
+    const impact=resolveRaceContact(rival,other,dt);
+    this.applyContact(index,x,z,vx,vz,yawRate);
+    if(otherIndex!==undefined)this.applyContact(otherIndex,bx,bz,bvx,bvz,byaw);
+    return impact;
+  }
+  /** The player and rivals receive the same contact impulse. A zero return
+   * can still separate overlapping poses without changing their velocity. */
+  contactPlayer(body:RaceContactBody,dt:number):number {
+    let impact=0;
+    for(let i=0;i<this.rivals.length;i++){
+      if(!this.rivals[i].finished&&!this.plans[i].visit)impact=Math.max(impact,this.contactRival(i,body,dt));
+    }
+    return impact;
   }
 }
-function signedDistance(value:number,length:number){return ((value+length*1.5)%length)-length/2;}
+function signedDistance(value:number,length:number){return value-Math.floor(value/length+.5)*length;}

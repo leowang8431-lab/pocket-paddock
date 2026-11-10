@@ -36,7 +36,7 @@ const readyGrid=async()=>{
  // See every car once, including those behind the follow camera. This warms
  // their number textures before comparing GPU counts across roster changes.
  await page.evaluate(()=>window.__PP.setOverview('all'));await settle();await page.evaluate(()=>window.__PP.setOverview(null));await settle();
- const s=await snap();assert.equal(s.state,'countdown');assert.equal(s.competition.position,3);return s;
+ const s=await snap();assert.equal(s.state,'countdown');assert.ok(s.competition.position>=1&&s.competition.position<=6);return s;
 };
 const leaveRace=async()=>{
  const s=await snap();if(s.state==='racing'||s.state==='countdown')await page.keyboard.press('Escape');

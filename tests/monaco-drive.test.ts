@@ -11,7 +11,7 @@ const track=new Track('monaco'),scene=createScenery(track);track.barrierSegments
  * A single grid reset is followed only by four boolean keyboard commands.
  * No route projection, checkpoint, velocity, clock or position writes occur. */
 function drive(weather:WeatherMode){
- const dt=1/120,car=new VehiclePhysics(),race=new RaceSession(track,undefined,weather),grid=track.sampleAt(-12),wet=WEATHER_PHYSICS[weather];car.weather=weather;car.reset(grid.point.x-grid.right.x*2.5,grid.point.z-grid.right.z*2.5,Math.atan2(grid.tangent.x,grid.tangent.z));race.start();
+ const dt=1/120,car=new VehiclePhysics(),race=new RaceSession(track,undefined,weather),grid=track.sampleAt(-12),wet=WEATHER_PHYSICS[weather];car.weather=weather;car.tires.fit(weather==='rainy'?'wet':'medium',weather);car.reset(grid.point.x-grid.right.x*2.5,grid.point.z-grid.right.z*2.5,Math.atan2(grid.tangent.x,grid.tangent.z));race.start();
  let input:Controls={throttle:false,brake:false,left:false,right:false},maximumLateral=0,collisionFrames=0,brakingFrames=0;const checkpoints=new Set<number>();
  for(let frame=0;frame<120*500&&race.completed<1;frame++){
   if(frame%2===0&&race.state==='racing'){

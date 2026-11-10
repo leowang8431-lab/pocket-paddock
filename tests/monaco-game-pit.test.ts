@@ -52,7 +52,7 @@ test('Monaco pause and reset preserve the one service draw and never award unfin
  pit.reset();assert.equal(pit.summary.active,false);assert.equal(pit.summary.completedStops,0);assert.equal(pit.summary.currentCompound,'medium');assert.equal(pit.summary.serviceDuration,0);
 });
 
-test('a qualified Monaco pit visit preserves sequential lap timing and the same shortcut without prior checkpoints cannot award a lap',()=>{
+test('a forward Monaco pit finish counts after measured lap travel but a teleport into the pits cannot award a lap',()=>{
  const run=(qualified:boolean)=>{
   const pit=new PitLaneController(track,()=>.5),vehicle=new VehiclePhysics(),race=new RaceSession(track);race.start();race.update(4.5,0,0,1);
   // Race-only qualification fixture: public distance samples traverse every
@@ -63,10 +63,10 @@ test('a qualified Monaco pit visit preserves sequential lap timing and the same 
   while(pit.summary.active&&frames++<24000){const servicing=pit.summary.state==='service',beforeElapsed=race.elapsed,beforeCompleted=race.completed;stepPit(pit,vehicle,track,'audi','hard');race.update(dt,pit.summary.raceDistance,30,pit.summary.forward,pit.summary.legalPit);
    const delta=((pit.summary.raceDistance-previous+track.length*1.5)%track.length)-track.length/2;assert.ok(Math.abs(delta)<1,'Pit certification skipped over ordered progress validation');if(servicing){serviceTime+=dt;assert.ok(Math.abs(delta)<1e-3);if(race.completed===beforeCompleted)assert.ok(race.elapsed>beforeElapsed,'The lap clock stopped during tyre service');}previous=pit.summary.raceDistance;
   }
-  assert.ok(frames<24000);assert.ok(Math.abs(serviceTime-pit.summary.serviceDuration)<=dt+1e-8);assert.equal(pit.summary.completedStops,1);assert.equal(race.valid,true);
+  assert.ok(frames<24000);assert.ok(Math.abs(serviceTime-pit.summary.serviceDuration)<=dt+1e-8);assert.equal(pit.summary.completedStops,1);assert.equal(race.valid,true);assert.equal(race.totalPenalty,0);
   const count=race.completed;race.update(dt,track.nearest(vehicle.x,vehicle.z).distance,0,1);assert.equal(race.completed,count,'Returning manual control counted a second lap');return race;
  };
  const qualified=run(true);assert.equal(qualified.completed,1);assert.equal(qualified.result?.valid,true);assert.ok(qualified.result!.time>12);
- const shortcut=run(false);assert.equal(shortcut.completed,0,'Entering the pit lane without the preceding ordered checkpoints granted a free lap');
- const outside=new RaceSession(track);outside.start();outside.update(4.5,0,0,1);outside.update(1,20,30,1,false);assert.equal(outside.valid,false,'The pit exception leaked into normal off-track driving');
+ const shortcut=run(false);assert.equal(shortcut.completed,0,'Teleporting into the pit lane granted a free lap');
+ const outside=new RaceSession(track);outside.start();outside.update(4.5,0,0,1);outside.update(1,20,30,1,false);assert.equal(outside.penaltyCount,1,'The pit exception leaked into normal off-track driving');
 });

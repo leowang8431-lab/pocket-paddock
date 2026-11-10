@@ -66,7 +66,7 @@ test('normal main-track driving, wrong-way pit travel and teleporting across the
     pit.cancel();vehicle.reset(e.x-tx*100,e.z-tz*100,e.heading);vehicle.speed=30;pit.update(1/120,vehicle,teams[0].id,'soft');vehicle.x=e.x+tx;vehicle.z=e.z+tz;assert.equal(pit.update(1/120,vehicle,teams[0].id,'soft'),false);
   }
 });
-test('legal pit travel keeps clocks running and crosses only ordered checkpoints, including the finish line',()=>{
+test('legal pit travel keeps clocks running and counts a forward finish crossing without a penalty',()=>{
   for(const track of Object.values(tracks)){
     const pit=new PitLaneController(track,()=>.5),vehicle=new VehiclePhysics(),race=new RaceSession(track);
     race.start();race.update(4.5,0,0,1);const capture=track.nearest(pit.entry.x,pit.entry.z).distance;
@@ -82,9 +82,9 @@ test('legal pit travel keeps clocks running and crosses only ordered checkpoints
       if(wasService){visitedService=true;serviceElapsed+=1/120;if(pit.summary.state==='service')assert.ok(Math.abs(delta)<1e-8);if(race.completed===oldCompleted)assert.ok(race.elapsed>oldTime);}
       oldDistance=pit.summary.raceDistance;
     }
-    assert.ok(visitedService&&serviceElapsed>=3-1/120);assert.equal(race.completed,1);assert.equal(race.valid,true);assert.equal(race.last!==null,true);
+    assert.ok(visitedService&&serviceElapsed>=3-1/120);assert.equal(race.completed,1);assert.equal(race.valid,true);assert.equal(race.last!==null,true);assert.equal(race.totalPenalty,0);
     const exit=track.nearest(vehicle.x,vehicle.z);race.update(1/120,exit.distance,0,1);assert.equal(race.completed,1,'Pit exit counted a second lap');
-    const unsafe=new RaceSession(track);unsafe.start();unsafe.update(4.5,0,0,1);unsafe.update(1,10,25,1);assert.equal(unsafe.valid,false,'Ordinary off-track travel must retain track-limit rules');
+    const unsafe=new RaceSession(track);unsafe.start();unsafe.update(4.5,0,0,1);unsafe.update(1,10,25,1);assert.equal(unsafe.penaltyCount,1,'Ordinary off-track travel must retain track-limit rules');
   }
 });
 
@@ -111,7 +111,7 @@ test('the post-physics 120 km/h governor caps both velocity and speed without ch
     const index=nodes.findIndex((p,i)=>i>nodes.length*.4&&i<nodes.length*.8&&track.isPitLane(p.x,p.z)),point=nodes[index],next=nodes[index+1];assert.ok(point);
     vehicle.reset(point.x,point.z,Math.atan2(next.x-point.x,next.z-point.z));vehicle.speed=42;vehicle.vx=Math.sin(vehicle.heading)*42;vehicle.vz=Math.cos(vehicle.heading)*42;
     vehicle.throttlePressure=.87;vehicle.brakePressure=.28;vehicle.steering=.44;vehicle.frontWheelAngle=.18;vehicle.drsActive=true;pit.afterPhysics(1/120,vehicle);
-    assert.equal(pit.summary.active,false);assert.equal(pit.summary.controlled,false);assert.equal(pit.summary.limited,true);assert.ok(Math.abs(vehicle.speed)<=20+1e-10);assert.ok(Math.hypot(vehicle.vx,vehicle.vz)<=20+1e-10);
+    assert.equal(pit.summary.active,false);assert.equal(pit.summary.controlled,false);assert.equal(pit.summary.limited,true);assert.ok(Math.abs(vehicle.speed)<=PIT_SPEED_LIMIT+1e-10);assert.ok(Math.hypot(vehicle.vx,vehicle.vz)<=PIT_SPEED_LIMIT+1e-10);
     assert.equal(vehicle.throttlePressure,.87);assert.equal(vehicle.brakePressure,.28);assert.equal(vehicle.steering,.44);assert.equal(vehicle.frontWheelAngle,.18);assert.equal(vehicle.drsActive,false);
     const road=track.sampleAt(track.length*.4).point;vehicle.x=road.x;vehicle.z=road.z;vehicle.speed=23;vehicle.vx=23;vehicle.vz=0;pit.afterPhysics(1/120,vehicle);assert.equal(pit.summary.limited,false);assert.equal(vehicle.speed,23);
   }

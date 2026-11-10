@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {asphaltTexture,catchFenceMaterial} from './monza-details';
 import type {Track,TrackSample} from './track';
 import {buildSpaPitSurfaces,trimSpaPitGround} from './spa-pit-surfaces';
+import {addStartGridPaint} from './start-grid';
 
 /** Horizontal plan from Tomislav Bacinger's f1-circuits, MIT.
  * https://github.com/bacinger/f1-circuits/blob/master/circuits/be-1925.geojson
@@ -128,7 +129,7 @@ export function buildSpaTrack(track:Track,pitPoints:readonly THREE.Vector3[]){
  // Start/finish and grid are perpendicular to the real start tangent.
  const s=track.sampleAt(0),yaw=Math.atan2(s.tangent.x,s.tangent.z);
  for(let x=0;x<track.width;x++)for(let z=0;z<2;z++){const m=new THREE.Mesh(new THREE.BoxGeometry(1,.018,1),mat((x+z)%2?0xecebdc:0x273f35));m.position.copy(s.point).addScaledVector(s.right,x-(track.width-1)/2).addScaledVector(s.tangent,z-.5);m.position.y+=.089;m.rotation.y=yaw;root.add(m);}
- for(let i=0;i<10;i++){const s=track.sampleAt(-8-Math.floor(i/2)*9),side=i%2?3.8:-3.8,g=new THREE.Group();g.position.copy(s.point).addScaledVector(s.right,side);g.position.y+=.085;g.rotation.y=Math.atan2(s.tangent.x,s.tangent.z);for(const dx of [-1.5,1.5]){const m=new THREE.Mesh(new THREE.BoxGeometry(.13,.028,3.4),mat(0xe5e6d6));m.position.x=dx;g.add(m);}const m=new THREE.Mesh(new THREE.BoxGeometry(3.1,.028,.13),mat(0xe5e6d6));m.position.z=1.7;g.add(m);root.add(g);}
+ addStartGridPaint(root,track,'spa-start-grid-box',.045);
  // Broad, continuous terrain follows nearby track heights; the road earth-bed
  // hides the small grid interpolation error beside the asphalt edge.
  const xs=track.samples.map(s=>s.point.x),zs=track.samples.map(s=>s.point.z),minX=Math.min(...xs)-220,maxX=Math.max(...xs)+220,minZ=Math.min(...zs)-200,maxZ=Math.max(...zs)+200,step=12,nx=Math.ceil((maxX-minX)/step),nz=Math.ceil((maxZ-minZ)/step),p:number[]=[],indices:number[]=[];

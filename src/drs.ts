@@ -1,5 +1,6 @@
 import type {WeatherMode} from './conditions';
 import type {RaceState} from './race';
+import {KMH_PER_SPEED_UNIT} from './speed-scale';
 
 export const MONZA_DRS_REFERENCE='https://www.fia.com/system/files/decision-document/2025_italian_grand_prix_-_event_notes_-_circuit_map_pit_lane_emergency_exit_map_quarantine_zone_and_red_zones.pdf';
 export const MONZA_REAL_LENGTH=5793;
@@ -75,7 +76,7 @@ export class DrsController {
     else if(!context.onRoad||context.pitLane||context.forward<.3||context.collision>.05)state='offtrack';
     else if(!zone)state='outside';
     else if(context.brake>0)state='braking';
-    else if(context.speed<12)state='slow';
+    else if(context.speed<72/KMH_PER_SPEED_UNIT)state='slow';
     const available=state==='ready';
     if(!available)this.requested=false;
     const active=available&&this.requested;

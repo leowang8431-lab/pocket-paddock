@@ -69,6 +69,8 @@ test('grade gravity slows climbing and aids descending while the barrier still s
  const straight=(grade:number):PhysicsTrack=>({width:11,barrierOffset:24,gradeAlongHeadingAt:()=>grade,nearest:(_x,z)=>({point:{x:0,z},tangent:{x:0,z:1},distance:z}),surfaceAt:()=> 'asphalt'});
  const drive=(grade:number)=>{const v=new VehiclePhysics();v.reset(0,0,0);v.speed=20;v.vz=20;for(let i=0;i<240;i++)v.update(1/120,{...empty,throttle:true},straight(grade));return v;};
  const up=drive(.13),flat=drive(0),down=drive(-.13);assert.ok(up.speed<flat.speed-.3);assert.ok(down.speed>flat.speed+.3);
- const v=new VehiclePhysics();v.reset(25,0,0);v.update(1/120,empty,{...straight(0),surfaceAt:()=> 'grass'});assert.equal(v.collision,1);assert.ok(Math.abs(v.x-23.7)<1e-9);
+ const v=new VehiclePhysics();v.reset(25,0,Math.PI/2);v.speed=v.vx=15;
+ assert.ok(v.update(1/120,empty,{...straight(0),surfaceAt:()=> 'grass'})>10);
+ assert.ok(v.vx<0&&Math.abs(v.x-23.7)<1e-9);
  const corner=spa.corners.find(c=>c.name.startsWith('Raidillon'))!,s=spa.sampleAt(corner.distance);v.reset(s.point.x,s.point.z,Math.atan2(s.tangent.x,s.tangent.z));assert.equal(v.speed,0);assert.equal(v.collision,0);assert.ok(Number.isFinite(spa.heightAt(v.x,v.z)));
 });

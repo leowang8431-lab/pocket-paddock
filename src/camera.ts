@@ -21,6 +21,7 @@ export class ChaseCamera {
   private lookAhead=0;
   private lookHeight=0;
   private fieldOfView=48;
+  private bumpStrength=0;
   private selectedMode:CameraMode='standard';
   private selectedMenuView:MenuView='front';
 
@@ -31,6 +32,7 @@ export class ChaseCamera {
   cycleMode():CameraMode{this.setMode(CAMERA_MODES[(CAMERA_MODES.indexOf(this.selectedMode)+1)%CAMERA_MODES.length]);return this.selectedMode;}
   setMenuView(view:MenuView){if(view!==this.selectedMenuView){this.selectedMenuView=view;this.snap();}}
   cycleMenuView():MenuView{this.setMenuView(MENU_VIEWS[(MENU_VIEWS.indexOf(this.selectedMenuView)+1)%MENU_VIEWS.length]);return this.selectedMenuView;}
+  bump(impactSpeed:number){this.bumpStrength=Math.max(this.bumpStrength,Math.min(.17,impactSpeed*.012));}
 
   update(position:THREE.Vector3,heading:number,_speed:number,dt:number,menu=false){
     // Explicit view changes and reset/resize can reframe one paused frame.
@@ -63,14 +65,15 @@ export class ChaseCamera {
     this.forward.set(Math.sin(this.followHeading),0,Math.cos(this.followHeading));
     this.right.set(Math.cos(this.followHeading),0,-Math.sin(this.followHeading));
     this.camera.position.copy(position).addScaledVector(this.forward,this.forwardOffset).addScaledVector(this.right,this.sideOffset);
-    this.camera.position.y+=this.height;
+    this.camera.position.y+=this.height+this.bumpStrength;
+    this.bumpStrength*=Math.exp(-16*step);
     this.look.copy(position).addScaledVector(this.forward,this.lookAhead);this.look.y+=this.lookHeight;
     this.camera.lookAt(this.look);
     if(Math.abs(this.camera.fov-this.fieldOfView)>1e-7){this.camera.fov=this.fieldOfView;this.camera.updateProjectionMatrix();}
     this.anchor.copy(position);this.initialized=true;this.transitionRequested=false;this.inMenu=menu;
   }
 
-  snap(){this.initialized=false;this.transitionRequested=true;}
+  snap(){this.initialized=false;this.transitionRequested=true;this.bumpStrength=0;}
   get summary(){
     const profile=CAMERA_PROFILES[this.selectedMode];
     return{mode:this.selectedMode,menuView:this.selectedMenuView,menu:this.inMenu,

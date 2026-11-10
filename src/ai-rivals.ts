@@ -53,7 +53,7 @@ export class AiRivals {
       this.template=new FleetCar();
       // If the player already fell back, use the identical fallback chassis
       // rather than silently giving opponents a different recovered model.
-      if(player?.status!=='fallback')await this.template.load();
+      if(player?.status==='fallback')this.template.useFallback();else await this.template.load();
       this.state=this.template.status==='ready'?'ready':'fallback';
       this.build();this.update(this.active,0);
     })().catch(error=>{this.clearBuiltParts();this.state='failed';this.pending=undefined;console.warn('AI 车队模型未就绪。',error);});
@@ -149,13 +149,13 @@ export class AiRivals {
       let pose=this.poses.get(rival.id);
       if(!pose||rival.distance<pose.distance-.01){pose={distance:rival.distance,elapsed:0,travel:0,steeringAngle:rival.frontWheelAngle,helmetRoll:0,helmetPitch:0};this.poses.set(rival.id,pose);}
       else if(step>0){
-        pose.travel+=Math.max(0,rival.distance-pose.distance);pose.elapsed+=step;
+        pose.travel+=rival.speed*step;pose.elapsed+=step;
         pose.steeringAngle=THREE.MathUtils.damp(pose.steeringAngle,rival.frontWheelAngle,12,step);
         const steering=rival.frontWheelAngle/.38;
         pose.helmetRoll=THREE.MathUtils.damp(pose.helmetRoll,steering*Math.min(Math.abs(rival.speed)/80,.075),6,step);
         pose.helmetPitch=Math.sin(pose.elapsed*8)*Math.min(Math.abs(rival.speed)/4000,.012);
       }
-      pose.distance=rival.distance;this.template.setRenderPose(pose);this.template.group.updateMatrixWorld(true);
+      pose.distance=rival.distance;pose.drsOpen=rival.drsActive;this.template.setRenderPose(pose);this.template.group.updateMatrixWorld(true);
       const ground=roadPose(this.ground,rival.x,rival.z,rival.heading);
       this.object.position.set(rival.x,ground.height,rival.z);this.object.rotation.set(ground.pitch,rival.heading,0,'YXZ');this.object.scale.setScalar(1);this.object.updateMatrix();
       for(const batch of this.batches){

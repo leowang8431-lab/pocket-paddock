@@ -3,6 +3,7 @@ import {MONACO_COORDINATES} from './monaco-coordinates';
 import {asphaltTexture,catchFenceMaterial} from './monza-details';
 import {batchStaticChildren} from './render-batches';
 import {createMonacoPitPlan,buildMonacoPitSurfaces,type MonacoPitPlan,type MonacoPitBox,type MonacoPitProfile} from './monaco-pit-layout';
+import {addStartGridPaint} from './start-grid';
 
 export const MONACO_METRES_PER_UNIT=3.2;
 export const MONACO_REAL_LENGTH=3337;
@@ -156,8 +157,7 @@ export class MonacoLayout {
   // so waiting drivers see them before crossing the unchanged finish line.
   for(let i=0;i<5;i++){const lamp=new THREE.Mesh(new THREE.SphereGeometry(.25,10,8),new THREE.MeshStandardMaterial({color:0xa5483b,emissive:0x3a130e,roughness:.65}));lamp.name=`monaco-start-lamp-grid-facing-${i+1}`;lamp.position.set((i-2)*.82,6.37,-.57);gantry.add(lamp);}
   batchStaticChildren(gantry);
-  const gridMaterial=new THREE.MeshBasicMaterial({color:0xd9dfcf});
-  for(let i=0;i<10;i++){const s=this.sampleAt(-7-Math.floor(i/2)*6),marker=new THREE.Group();marker.name='monaco-start-grid-box';marker.position.copy(s.point).addScaledVector(s.right,i%2?1.5:-1.5);marker.position.y+=.045;marker.rotation.y=Math.atan2(s.tangent.x,s.tangent.z);this.group.add(marker);for(const side of [-1,1]){const line=new THREE.Mesh(new THREE.BoxGeometry(.055,.025,2.8),gridMaterial);line.position.x=side*.72;marker.add(line);}const line=new THREE.Mesh(new THREE.BoxGeometry(1.45,.025,.055),gridMaterial);line.position.z=1.4;marker.add(line);batchStaticChildren(marker);}
+  addStartGridPaint(this.group,this,'monaco-start-grid-box',0,MONACO_METRES_PER_UNIT);
   batchStaticChildren(startGroup);batchStaticChildren(this.group);
  }
 }

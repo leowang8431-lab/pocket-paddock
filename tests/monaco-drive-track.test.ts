@@ -21,6 +21,17 @@ test('Monaco height and pitch follow the actual main and separate pit GPU surfac
  assert.ok(pitChecks>25);assert.ok(track.samples.some(s=>s.point.y>40));
 });
 
-test('Monaco collides with the actual street walls instead of an invisible twenty-four-unit perimeter',()=>{
- assert.ok(track.barrierSegments.length>1000);const wall=track.barrierSegments.find(w=>{const n=track.nearest((w.ax+w.bx)/2,(w.az+w.bz)/2);return n.distance<15;})!;assert.ok(wall);const cx=(wall.ax+wall.bx)/2,cz=(wall.az+wall.bz)/2,near=track.nearest(cx,cz),inside=new THREE.Vector3(near.point.x-cx,0,near.point.z-cz).normalize(),car=new VehiclePhysics();car.reset(cx+inside.x*.4,cz+inside.z*.4,Math.atan2(near.tangent.x,near.tangent.z));car.update(1/120,{throttle:false,brake:false,left:false,right:false},track);assert.equal(car.collision,1);assert.ok(Math.hypot(car.x-cx,car.z-cz)>=wall.radius+.94);assert.ok(track.surfaceAt(near.point.x,near.point.z)==='asphalt');
+test('a Monaco wall separates the car and reflects the velocity directed into it',()=>{
+ assert.ok(track.barrierSegments.length>1000);
+ const wall=track.barrierSegments.find(w=>track.nearest((w.ax+w.bx)/2,(w.az+w.bz)/2).distance<15)!;assert.ok(wall);
+ const cx=(wall.ax+wall.bx)/2,cz=(wall.az+wall.bz)/2,near=track.nearest(cx,cz);
+ const inside=new THREE.Vector3(wall.bz-wall.az,0,wall.ax-wall.bx).normalize();
+ if(inside.x*(near.point.x-cx)+inside.z*(near.point.z-cz)<0)inside.negate();
+ const car=new VehiclePhysics();car.reset(cx+inside.x*.4,cz+inside.z*.4,Math.atan2(-inside.x,-inside.z));
+ car.speed=15;car.vx=-inside.x*15;car.vz=-inside.z*15;
+ const impact=car.update(1/120,{throttle:false,brake:false,left:false,right:false},track);
+ assert.ok(impact>10);assert.equal(car.collision,1);
+ assert.ok(car.vx*inside.x+car.vz*inside.z>0);
+ assert.ok(Math.hypot(car.x-cx,car.z-cz)>=wall.radius+.94);
+ assert.equal(track.surfaceAt(near.point.x,near.point.z),'asphalt');
 });

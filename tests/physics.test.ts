@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { VehiclePhysics, type Controls, type PhysicsTrack, type Surface } from '../src/physics.ts';
+import {KMH_PER_SPEED_UNIT,TRACK_SPEED_SCALE} from '../src/speed-scale.ts';
+import {resolveRaceContact} from '../src/race-contact.ts';
 
 const idle: Controls = { throttle: false, brake: false, left: false, right: false };
 const gas: Controls = { ...idle, throttle: true };
@@ -27,8 +29,33 @@ test('throttle accelerates from rest in the heading direction and respects maxim
   assert.ok(vehicle.z > 3);
   assert.ok(Math.abs(vehicle.x) < 0.001);
   drive(vehicle, 20, gas, track);
-  assert.ok(vehicle.speed <= 40);
-  assert.ok(vehicle.speed > 35);
+  assert.ok(vehicle.speed <= 40*TRACK_SPEED_SCALE);
+  assert.ok(vehicle.speed > 35*TRACK_SPEED_SCALE);
+});
+
+test('the displayed speed maps to the faster world-space pace',()=>{
+  const car=new VehiclePhysics();car.speed=car.vz=120/KMH_PER_SPEED_UNIT;
+  const speed=car.speed,dt=1/120;
+  car.update(dt,idle,straight());
+  assert.ok(speed>20*1.07);
+  assert.ok(Math.abs(car.z/dt-car.speed)<1e-9);
+  assert.ok(Math.abs(car.speed*KMH_PER_SPEED_UNIT-120)<.2);
+});
+
+test('compound and tread change the car’s sustained speed, and resetting on track keeps wear',()=>{
+  const road=straight(),soft=new VehiclePhysics(),hard=new VehiclePhysics();
+  soft.tires.fit('soft');hard.tires.fit('hard');
+  drive(soft,20,gas,road);drive(hard,20,gas,road);
+  const warmSpeed=soft.speed;
+  assert.ok(warmSpeed>hard.speed+1);
+  drive(soft,160,gas,road);drive(hard,160,gas,road);
+  assert.ok(soft.speed<warmSpeed-2);
+  assert.ok(soft.tires.summary.wear>hard.tires.summary.wear);
+  const wornSpeed=soft.speed,wear=soft.tires.summary.wear;
+  soft.reset(0,0,0);
+  assert.equal(soft.tires.summary.wear,wear);
+  soft.tires.fit('soft');drive(soft,20,gas,road);
+  assert.ok(soft.speed>wornSpeed+2);
 });
 
 test('brakes shed speed much faster than simply releasing the throttle', () => {
@@ -107,20 +134,19 @@ test('a barrier impact confines the car, reduces speed and produces collision fe
 
 test('a solid building collides on asphalt, including the vehicle radius on every side', () => {
   const cases = [
-    { x: 1.4, z: 0, box: { minX: 2, maxX: 3, minZ: -10, maxZ: 10 }, axis: 'x', limit: 1.05 },
-    { x: 3.6, z: 0, box: { minX: 2, maxX: 3, minZ: -10, maxZ: 10 }, axis: 'x', limit: 3.95 },
-    { x: 0, z: 1.4, box: { minX: -10, maxX: 10, minZ: 2, maxZ: 3 }, axis: 'z', limit: 1.05 },
-    { x: 0, z: 3.6, box: { minX: -10, maxX: 10, minZ: 2, maxZ: 3 }, axis: 'z', limit: 3.95 },
+    { x: 1.4, z: 0, heading: Math.PI/2, box: { minX: 2, maxX: 3, minZ: -10, maxZ: 10 }, axis: 'x', limit: 1.05 },
+    { x: 3.6, z: 0, heading: -Math.PI/2, box: { minX: 2, maxX: 3, minZ: -10, maxZ: 10 }, axis: 'x', limit: 3.95 },
+    { x: 0, z: 1.4, heading: 0, box: { minX: -10, maxX: 10, minZ: 2, maxZ: 3 }, axis: 'z', limit: 1.05 },
+    { x: 0, z: 3.6, heading: Math.PI, box: { minX: -10, maxX: 10, minZ: 2, maxZ: 3 }, axis: 'z', limit: 3.95 },
   ] as const;
-  for (const { x, z, box, axis, limit } of cases) {
+  for (const { x, z, heading, box, axis, limit } of cases) {
     const vehicle = new VehiclePhysics();
-    vehicle.x = x;
-    vehicle.z = z;
+    vehicle.reset(x,z,heading);
     vehicle.speed = 10;
-    vehicle.update(1 / 120, idle, { ...straight(), colliders: [box] });
+    const impact=vehicle.update(1 / 120, idle, { ...straight(), colliders: [box] });
     assert.ok(Math.abs(vehicle[axis] - limit) < 1e-10);
-    assert.ok(vehicle.speed < 3.1);
-    assert.equal(vehicle.collision, 1);
+    assert.ok(impact>9.9);
+    assert.ok(vehicle.speed< -1&&vehicle.speed> -1.3);
   }
 });
 
@@ -139,10 +165,23 @@ test('a thin wall cannot be crossed at maximum speed with the production physics
   vehicle.speed = 40;
   vehicle.vx = 40;
   vehicle.heading = Math.PI / 2;
-  for (let i = 0; i < 120; i++) vehicle.update(1 / 120, gas, track);
-  assert.ok(vehicle.x <= 1.05);
-  assert.equal(vehicle.collision, 1);
-  assert.ok(vehicle.speed < 1);
+  let maximumImpact=0;
+  for (let i = 0; i < 120; i++){
+    maximumImpact=Math.max(maximumImpact,vehicle.update(1 / 120, gas, track));
+    assert.ok(vehicle.x <= 1.05+1e-10);
+  }
+  assert.ok(maximumImpact>39);
+  assert.ok(Math.abs(vehicle.speed)<1);
+});
+
+test('a shallow wall strike largely keeps the velocity parallel to the wall',()=>{
+  const vehicle=new VehiclePhysics();vehicle.x=1.04;vehicle.vx=2.4;vehicle.vz=26;
+  vehicle.speed=Math.hypot(vehicle.vx,vehicle.vz);
+  const track={...straight(),colliders:[{minX:2,maxX:3,minZ:-10,maxZ:100}]};
+  const impact=vehicle.update(1/120,idle,track);
+  assert.ok(impact>0&&impact<3);
+  assert.ok(vehicle.vx<=0&&vehicle.vz>24.7);
+  assert.equal(vehicle.speed,Math.hypot(vehicle.vx,vehicle.vz));
 });
 
 test('reset clears velocity, steering and collision while restoring the requested position', () => {
@@ -194,12 +233,60 @@ test('brake has priority over simultaneous throttle and stopping does not kick b
 
 test('DRS reduces drag with a gradual speed gain and retains momentum on closure',()=>{
   const closed=new VehiclePhysics(),open=new VehiclePhysics();
-  closed.speed=open.speed=40;closed.vz=open.vz=40;closed.throttlePressure=open.throttlePressure=1;open.drsActive=true;
-  open.update(1/120,gas,straight());assert.ok(open.speed>40&&open.speed<40.05,'no velocity jump when the wing opens');
-  drive(closed,10,gas,straight());drive(open,10,gas,straight());assert.ok(closed.speed<=40);assert.ok(open.speed>43.5&&open.speed<=44.5);
+  const cap=40*TRACK_SPEED_SCALE;
+  closed.speed=open.speed=cap;closed.vz=open.vz=cap;closed.throttlePressure=open.throttlePressure=1;open.drsActive=true;
+  open.update(1/120,gas,straight());assert.ok(open.speed>cap&&open.speed<cap+.05,'no velocity jump when the wing opens');
+  drive(closed,10,gas,straight());drive(open,10,gas,straight());assert.ok(closed.speed<=cap);assert.ok(open.speed>43.5*TRACK_SPEED_SCALE&&open.speed<=44.5*TRACK_SPEED_SCALE);
   const before=open.speed;open.drsActive=false;open.update(1/120,gas,straight());assert.ok(open.speed>before-.05&&open.speed<=before,'closing the wing decelerates without a hard speed clamp');
-  drive(open,4,gas,straight());assert.ok(open.speed<40);
-  const wet=new VehiclePhysics();wet.weather='rainy';wet.drsActive=true;drive(wet,20,gas,straight());assert.ok(wet.speed<=40,'wet conditions never receive the DRS speed gain');
+  drive(open,4,gas,straight());assert.ok(open.speed<cap);
+  const wet=new VehiclePhysics();wet.weather='rainy';wet.drsActive=true;drive(wet,20,gas,straight());assert.ok(wet.speed<=cap,'wet conditions never receive the DRS speed gain');
+});
+
+test('a broadside contact preserves initial momentum then scrubs speed through the tires',()=>{
+  const car=new VehiclePhysics();car.vx=18;car.receiveContact(18);
+  assert.equal(car.speed,18);
+  car.update(1/120,idle,{...straight(),barrierOffset:100});
+  assert.ok(car.x>.13&&car.x<.15);
+  for(let i=0;i<119;i++)car.update(1/120,idle,{...straight(),barrierOffset:100});
+  assert.ok(car.speed<8);
+  assert.ok(Math.abs(car.z)<.1);
+});
+
+test('throttle pulls the car forward while the contact-induced sideways momentum decays',()=>{
+  const car=new VehiclePhysics(),road=straight(),step=1/120;
+  car.vx=18;car.receiveContact(18);
+  for(let i=0;i<60;i++)car.update(step,gas,road);
+  assert.ok(car.vx>4&&car.vx<18,'the slide dissipates progressively');
+  assert.ok(car.vz>2&&car.z>.5,'the rear tires drive the car along its heading during the slide');
+});
+
+test('a centered rear impact leaves both cars rolling and carries the impulse into the next driving step',()=>{
+  const player=new VehiclePhysics(),step=1/120;
+  player.speed=player.vz=32;
+  const leader={x:0,z:4.65,vx:0,vz:16,yawRate:0,heading:0};
+  player.receiveContact(resolveRaceContact(player,leader,step));
+  const transferred=player.vz;
+  assert.ok(transferred>20&&transferred<25&&leader.vz>25);
+  player.update(step,idle,straight());
+  assert.ok(player.vz>transferred-.1&&player.z>0);
+  assert.ok(Math.abs(player.vx)<1e-9&&player.yawRate===0);
+});
+
+test('the driving step carries high-speed, low-speed lateral and braking rebound impulses forward',()=>{
+  const road=straight(),step=1/120;
+  const fast=new VehiclePhysics();fast.vx=40;fast.vz=43;fast.receiveContact(22);
+  assert.equal(fast.speed,Math.hypot(40,43));
+  fast.update(step,idle,road);
+  assert.ok(Math.hypot(fast.vx,fast.vz)>57);
+
+  const slow=new VehiclePhysics();slow.vx=.3;slow.receiveContact(.3);
+  slow.update(step,idle,road);
+  assert.ok(slow.vx>0&&Math.abs(slow.vz)<.03);
+
+  const braking=new VehiclePhysics();braking.speed=braking.vz=20;
+  braking.update(step,brake,road);braking.vz=-12;braking.receiveContact(20);
+  braking.update(step,brake,road);
+  assert.ok(braking.speed< -11&&braking.vz< -11);
 });
 
 test('reset clears pedal pressure, actual wheel angle and DRS state while retaining weather',()=>{

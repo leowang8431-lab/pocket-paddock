@@ -94,21 +94,21 @@ test('real Monza lap rewards early braking and punishes holding full throttle',(
   const run=(fullThrottle:boolean)=>{
     const vehicle=new VehiclePhysics(),race=new RaceSession(track);const start=track.sampleAt(0);
     vehicle.reset(start.point.x,start.point.z,Math.atan2(start.tangent.x,start.tangent.z));race.start();race.update(4.5,0,0,1);
-    let maximumLateral=0,brakingSteps=0,hasInvalidated=false;
+    let maximumLateral=0,brakingSteps=0;
     for(let i=0;i<120*85;i++){
       const controls=controlsFor(vehicle,track,fullThrottle);if(controls.brake)brakingSteps++;
       vehicle.update(dt,controls,track);
       const sample=track.nearest(vehicle.x,vehicle.z),lateral=Math.hypot(vehicle.x-sample.point.x,vehicle.z-sample.point.z);
       race.update(dt,sample.distance,lateral,Math.sin(vehicle.heading)*sample.tangent.x+Math.cos(vehicle.heading)*sample.tangent.z);
-      maximumLateral=Math.max(maximumLateral,lateral);hasInvalidated ||= !race.valid;
-      if(race.completed>0||fullThrottle&&hasInvalidated)break;
+      maximumLateral=Math.max(maximumLateral,lateral);
+      if(race.completed>0||fullThrottle&&race.totalPenalty>0)break;
     }
-    return{race,maximumLateral,brakingSteps,hasInvalidated};
+    return{race,maximumLateral,brakingSteps};
   };
   const skilled=run(false),flatOut=run(true);
   assert.equal(skilled.race.completed,1);assert.equal(skilled.race.result?.valid,true);
   assert.ok(skilled.maximumLateral<4);assert.ok(skilled.brakingSteps>120);
-  assert.ok(flatOut.maximumLateral>11);assert.equal(flatOut.hasInvalidated,true);
+  assert.ok(flatOut.maximumLateral>11);assert.ok(flatOut.race.totalPenalty>0);
   assert.equal(flatOut.brakingSteps,0);assert.equal(flatOut.race.best,null);
 });
 

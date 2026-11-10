@@ -136,8 +136,8 @@ async function driveUntil(test,code,{timeout=11000,description='drive condition'
 try{
   await page.goto(report.url,{waitUntil:'networkidle'});await settle();
   const initial=await snapshot();
-  assert.equal(initial.audio.enabled,false);assert.equal(initial.audio.context,'not-created','AudioContext must be created only after a sound user gesture');
-  check('initial-audio-disabled-and-context-not-created');
+  assert.equal(initial.audio.enabled,true);assert.equal(initial.audio.context,'not-created','AudioContext must be created from a user gesture');
+  check('audio-enabled-by-default-with-context-deferred-to-start');
   const layouts={desktop:{width:1440,height:900},portrait:{width:391,height:844},landscape:{width:740,height:391}};
   const chosen=(process.env.PP_LAYOUTS??'desktop,portrait,landscape').split(',');
   for(const name of chosen){
@@ -166,15 +166,14 @@ try{
     report.status='passed';report.scope='showroom UI only';assert.deepEqual(report.errors,[]);await save();
   }else{
     await page.locator('#camera-mode').selectOption('standard');await page.locator('#race-mode').selectOption('time-trial');
-    await page.locator('#sound').click();await page.waitForFunction(()=>window.__PP.snapshot().audio.enabled&&window.__PP.snapshot().audio.context==='running');
-    const audioGraph=await attachAudioSampler();const menuSilence=await audioRms();
-    assert.ok(menuSilence.maxRms<.0001,`Menu audio should remain silent: ${menuSilence.maxRms}`);
     await page.locator('#start').click();await page.waitForFunction(()=>window.__PP.snapshot().state==='countdown');
+    await page.waitForFunction(()=>window.__PP.snapshot().audio.enabled&&window.__PP.snapshot().audio.context==='running');
+    const audioGraph=await attachAudioSampler();
     const beforeRev=await snapshot();await key('w',true);await page.waitForTimeout(550);const revving=await snapshot(),revSound=await audioRms();await key('w',false);
     assert.equal(revving.state,'countdown');assert.equal(revving.x,beforeRev.x);assert.equal(revving.z,beforeRev.z);assert.equal(revving.speed,0);
     assert.equal(revving.powertrain.gear,0);assert.ok(revving.powertrain.rpm>6000,'Countdown throttle must visibly free-rev');
     assert.equal(revSound.context,'running');assert.ok(revSound.maxRms>.0001&&revSound.maxPeak>.001,'Real engine graph has no non-zero output');
-    check('sound-user-gesture-live-output-and-countdown-free-rev',{audioGraph,menuSilence,revSound,rpm:revving.powertrain.rpm});
+    check('start-unlocks-default-sound-and-countdown-free-rev',{audioGraph,revSound,rpm:revving.powertrain.rpm});
     await shot('countdown-revving');await page.waitForFunction(()=>window.__PP.snapshot().state==='racing',undefined,{timeout:15000});
     const buttonModes=[(await snapshot()).camera.mode];
     for(let i=0;i<3;i++){await page.locator('#camera-cycle').click();buttonModes.push((await snapshot()).camera.mode);}
@@ -190,7 +189,7 @@ try{
     assert.ok(gears.length>=4&&upshifts.length>0,'Acceleration did not exercise sequential upshifts');
     if(Number.isFinite(fast.renderer.frame)&&Number.isFinite(stationary.renderer.frame))assert.ok(fast.renderer.frame>stationary.renderer.frame,'No actual renderer frames advanced while driving');
     const fastHud=await hud();assert.equal(fastHud.gear,String(fastPaused.powertrain.gear));assert.ok(Math.abs(fastHud.rpm-Math.round(fastPaused.powertrain.rpm))<=1,'HUD RPM differs from the frozen shared powertrain');
-    check('real-acceleration-upshifts-shared-hud-and-speed-invariant-camera',{speedKmh:fast.speed*6,gears,initialCamera:stationary.camera,fastCamera:fast.camera,shiftSerial:fast.powertrain.shiftSerial,hud:fastHud,renderedFrames:Number.isFinite(fast.renderer.frame)&&Number.isFinite(stationary.renderer.frame)?fast.renderer.frame-stationary.renderer.frame:null});
+    check('real-acceleration-upshifts-shared-hud-and-speed-invariant-camera',{speedKmh:fast.speedKmh,gears,initialCamera:stationary.camera,fastCamera:fast.camera,shiftSerial:fast.powertrain.shiftSerial,hud:fastHud,renderedFrames:Number.isFinite(fast.renderer.frame)&&Number.isFinite(stationary.renderer.frame)?fast.renderer.frame-stationary.renderer.frame:null});
     await shot('fast-car-detail-paused');
     const visited=[fastPaused.camera.mode];
     for(let i=0;i<3;i++){
@@ -213,7 +212,7 @@ try{
     assert.ok(braking.samples.some(s=>s.powertrain.shift==='down'),'No downshift occurred under actual braking');
     assert.ok(stopped.powertrain.shiftSerial>fast.powertrain.shiftSerial,'Braking did not advance shift event serial');
     assert.ok(Math.abs(stopped.speed)<=.12);const stoppedHud=await hud();assert.equal(stoppedHud.gear,stopped.powertrain.gear===0?'N':String(stopped.powertrain.gear));assert.ok(Math.abs(stoppedHud.rpm-Math.round(stopped.powertrain.rpm))<=1);
-    check('real-braking-sequential-downshifts-and-hud',{stopKmh:stopped.speed*6,initialShiftSerial:fast.powertrain.shiftSerial,stoppedShiftSerial:stopped.powertrain.shiftSerial,gears:[...new Set(braking.samples.map(s=>s.powertrain.gear))],hud:stoppedHud,pausedSound});
+    check('real-braking-sequential-downshifts-and-hud',{stopKmh:stopped.speedKmh,initialShiftSerial:fast.powertrain.shiftSerial,stoppedShiftSerial:stopped.powertrain.shiftSerial,gears:[...new Set(braking.samples.map(s=>s.powertrain.gear))],hud:stoppedHud,pausedSound});
     await shot('stopped-powertrain');
     await page.locator('#garage-back').click();await page.waitForFunction(()=>window.__PP.snapshot().state==='menu');await settle();
     await page.locator('#sound').click();await page.waitForFunction(()=>!window.__PP.snapshot().audio.enabled);assert.ok((await audioRms()).maxRms<.0001);

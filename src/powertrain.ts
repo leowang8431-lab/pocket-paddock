@@ -1,5 +1,6 @@
-/** Presentation-only gearbox: it never changes acceleration, grip or timing.
- * Speed is in game units (HUD km/h = speed * 6). */
+import {KMH_PER_SPEED_UNIT} from './speed-scale';
+
+/** Presentation-only gearbox: it never changes acceleration, grip or timing. */
 export type Gear=-1|0|1|2|3|4|5|6|7|8;
 export interface PowertrainInput {speed:number;throttle:number;brake?:number;active?:boolean}
 export interface PowertrainState {
@@ -34,7 +35,7 @@ export class Powertrain {
     return this.summary;
   }
   private step(dt:number,input:PowertrainInput){
-    const speed=finite(input.speed);this.kmh=Math.abs(speed)*6;
+    const speed=finite(input.speed);this.kmh=Math.abs(speed)*KMH_PER_SPEED_UNIT;
     const throttle=clamp(finite(input.throttle),0,1),brake=clamp(finite(input.brake??0),0,1);
     if(!this.initialized){this.initialized=true;this.startAge=0;}
     this.startAge+=dt;this.shiftAge+=dt;this.cooldown=Math.max(0,this.cooldown-dt);

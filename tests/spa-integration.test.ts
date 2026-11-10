@@ -37,7 +37,7 @@ test('four independent circuit/weather boards persist completed valid laps and p
     const race=new RaceSession({...small,id},storage,weather);assert.equal(race.best,null);
     race.start();race.update(4.5,0,0,1);
     for(let distance=10;distance<=small.length;distance+=10)race.update(step,distance%small.length,0,1);
-    assert.deepEqual(race.result,{time:step*24,valid:true,best:true});assert.equal(race.completed,1);
+    assert.deepEqual(race.result,{time:step*24,valid:true,best:true,penalty:0});assert.equal(race.completed,1);
     sessions.push(race);
   }
   assert.equal(values.size,4);

@@ -46,9 +46,9 @@ test('both narrowed shoulders lose asphalt grip and use the same tighter lap lim
       assert.notEqual(track.surfaceAt(point.x,point.z),'asphalt');
     }
     const race=new RaceSession(track);race.start();race.update(4.5,zone.center,0,1);
-    race.update(.36,zone.center,9.4,1);assert.equal(race.valid,false);assert.equal(race.invalidReason,'track-limits');
+    race.update(.36,zone.center,9.4,1);assert.equal(race.penaltyCount,1);
   }
-  const race=new RaceSession(track);race.start();race.update(4.5,0,0,1);race.update(.36,0,9.4,1);assert.equal(race.valid,true);
+  const race=new RaceSession(track);race.start();race.update(4.5,0,0,1);race.update(.36,0,9.4,1);assert.equal(race.penaltyCount,0);
   // Checkpoints cannot be collected beside a narrowed road using the old width.
   const local={length:240,width:16,widthAt:()=>15.2,checkpoints:[0,40,80,120,160,200]};
   const narrow=new RaceSession(local);narrow.start();narrow.update(4.5,30,0,1);narrow.update(.1,42,9.7,1);assert.equal(narrow.nextCheckpoint,1);

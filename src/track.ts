@@ -12,6 +12,7 @@ import type {MonacoLayout} from './monaco-layout';
 import {createHistoricConnectionLayout,historicConnectionContains,type HistoricConnectionLayout} from './monza-historic-connection';
 import {createHistoricSouthConnectionLayout} from './monza-historic-south-connection';
 import {clipHistoricRibbonGeometry} from './historic-ribbon-geometry';
+import {addStartGridPaint} from './start-grid';
 export type CircuitId='monza'|'spa'|'monaco';
 
 /** Scaled, widened Monza GP layout. Metres here are game units, not survey data. */
@@ -521,13 +522,7 @@ export class Track {
     const workingApron=new THREE.Mesh(apronGeometry,mat(0x969e92));workingApron.name='monza-connected-working-apron';workingApron.receiveShadow=true;this.group.add(workingApron);
     const lineMat=mat(0xf6eb99);
     const line=new THREE.Mesh(new THREE.BoxGeometry(.15,.025,222),lineMat);line.position.set(-65,.081,36);this.group.add(line);
-    // Start grid boxes, visible in the low follow camera.
-    const gridMat=mat(0xe5e6d6);
-    for(let i=0;i<10;i++){
-      const g=new THREE.Group();const x=-85+(i%2===0?-3.8:3.8),z=106+Math.floor(i/2)*9;
-      for(const dx of [-1.5,1.5]){const l=new THREE.Mesh(new THREE.BoxGeometry(.13,.028,3.4),gridMat);l.position.set(dx,0,0);g.add(l);}
-      const l=new THREE.Mesh(new THREE.BoxGeometry(3.1,.028,.13),gridMat);l.position.z=-1.7;g.add(l);g.position.set(x,.085,z);this.group.add(g);
-    }
+    addStartGridPaint(this.group,this,'monza-start-grid-box',.045);
     // Checkered finish stripe at distance zero.
     for(let x=0;x<16;x++)for(let z=0;z<2;z++){
       const square=new THREE.Mesh(new THREE.BoxGeometry(1,.018,1),mat((x+z)%2?0xf5f0df:0x243b38));

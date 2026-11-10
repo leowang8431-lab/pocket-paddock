@@ -4,6 +4,7 @@ import {SPA_PIT_LAYOUT} from './spa-pit-layout';
 import {MONZA_PIT_LAYOUT} from './monza-pit-layout';
 import {monacoPitIndex} from './monaco-team-pits';
 import type {MonacoDrivingTrack} from './monaco-drive-track';
+import {KMH_PER_SPEED_UNIT} from './speed-scale';
 
 type Point={x:number;y:number;z:number};
 export interface PitLaneTrack {
@@ -26,13 +27,23 @@ type Node=Point&{arc:number;base:number};
 type Projection=Point&{arc:number;gap:number;tx:number;tz:number};
 export type PitLaneState='idle'|'approach'|'service'|'exit';
 export const PIT_SPEED_LIMIT_KMH=120;
-export const PIT_SPEED_LIMIT=PIT_SPEED_LIMIT_KMH/6;
+export const PIT_SPEED_LIMIT=PIT_SPEED_LIMIT_KMH/KMH_PER_SPEED_UNIT;
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
 const lerp=(a:number,b:number,t:number)=>a+(b-a)*t;
 const smooth=(t:number)=>{const n=clamp(t,0,1);return n*n*(3-2*n);};
 const angle=(a:number)=>Math.atan2(Math.sin(a),Math.cos(a));
 const approach=(a:number,b:number,d:number)=>a<b?Math.min(b,a+d):Math.max(b,a-d);
 const modulo=(n:number,length:number)=>((n%length)+length)%length;
+
+/** One physical bay assignment for the player and automated rivals. */
+export function getPitServiceBay(track:Pick<PitLaneTrack,'id'|'monacoDrive'>,team:TeamId){
+  const index=track.id==='monaco'?monacoPitIndex(team):Math.max(0,teams.findIndex(t=>t.id===team));
+  const bay=track.id==='monaco'?track.monacoDrive?.pitBoxes[index]:undefined;
+  if(track.id==='monaco'&&!bay)throw new Error('Monaco garage assignment is unavailable.');
+  const x=bay?.apronCenter.x??(track.id==='monza'?MONZA_PIT_LAYOUT.stopX:SPA_PIT_LAYOUT.stopX);
+  const y=bay?.apronCenter.y??0,z=bay?.apronCenter.z??(track.id==='monza'?MONZA_PIT_LAYOUT.firstBayZ+index*MONZA_PIT_LAYOUT.baySpacing:243-index*13.2);
+  return {id:`${track.id}:${index}`,x,y,z,heading:bay?Math.atan2(bay.tangent.x,bay.tangent.z):Math.PI};
+}
 
 /** The manual entrance feeds one deterministic route through the selected bay.
  * Route nodes reuse the rendered pit road, including Spa's separate ramps.
@@ -218,11 +229,9 @@ export class PitLaneController {
   private begin(vehicle:PitVehicle,position:Projection,team:TeamId,compound:PitCompound){
     this.team=team;this.compound=compound;this.state='approach';this.routeArc=0;this.serviceElapsed=0;
     const draw=this.random();this.serviceDuration=2+2*clamp(Number.isFinite(draw)?draw:.5,0,1);
-    const index=Math.max(0,teams.findIndex(t=>t.id===team)),bay=this.track.id==='monaco'?this.track.monacoDrive?.pitBoxes[monacoPitIndex(team)]:undefined;
-    if(this.track.id==='monaco'&&!bay)throw new Error('Monaco garage assignment is unavailable.');
-    const z=bay?.apronCenter.z??(this.track.id==='monza'?MONZA_PIT_LAYOUT.firstBayZ+index*MONZA_PIT_LAYOUT.baySpacing:243-index*13.2),x=bay?.apronCenter.x??(this.track.id==='monza'?MONZA_PIT_LAYOUT.stopX:SPA_PIT_LAYOUT.stopX),y=bay?.apronCenter.y??0;
-    const projected=bay?this.project(x,z):this.projectAtZ(z),baseStop=projected.arc;
-    this.stop={x,y,z,heading:bay?Math.atan2(bay.tangent.x,bay.tangent.z):Math.PI,groundHeight:y};
+    const {x,y,z,heading}=getPitServiceBay(this.track,team),monaco=this.track.id==='monaco';
+    const projected=monaco?this.project(x,z):this.projectAtZ(z),baseStop=projected.arc;
+    this.stop={x,y,z,heading,groundHeight:y};
     this.capturedBase=position.arc;this.raceStart=this.track.nearest(vehicle.x,vehicle.z).distance;
     const exit=this.lane.at(-1)!;this.raceSpan=modulo(this.track.nearest(exit.x,exit.z).distance-this.raceStart,this.track.length);
     this.raceDistance=this.raceStart;this.groundHeight=position.y;
@@ -230,8 +239,8 @@ export class PitLaneController {
     this.route=[];let arc=0,lastBase=-Infinity;
     for(const base of points){
       if(base-lastBase<1e-7)continue;lastBase=base;
-      const p=this.sample(this.lane,base),distance=Math.abs(base-baseStop),weight=1-smooth(distance/(bay?36:this.track.id==='spa'?26:14));
-      const target=bay?{x:p.x+(x-projected.x)*weight,y:p.y+(y-projected.y)*weight,z:p.z+(z-projected.z)*weight}:{x:lerp(p.x,x,weight),y:lerp(p.y,0,weight),z:p.z};
+      const p=this.sample(this.lane,base),distance=Math.abs(base-baseStop),weight=1-smooth(distance/(monaco?36:this.track.id==='spa'?26:14));
+      const target=monaco?{x:p.x+(x-projected.x)*weight,y:p.y+(y-projected.y)*weight,z:p.z+(z-projected.z)*weight}:{x:lerp(p.x,x,weight),y:lerp(p.y,0,weight),z:p.z};
       if(base===baseStop)Object.assign(target,{x,y,z});
       const merge=smooth((base-position.arc)/9),along=base-position.arc;
       const point={x:lerp(vehicle.x+position.tx*along,target.x,merge),y:lerp(position.y,target.y,merge),z:lerp(vehicle.z+position.tz*along,target.z,merge)};
