@@ -58,6 +58,35 @@ test('compound and tread change the car’s sustained speed, and resetting on tr
   assert.ok(soft.speed>wornSpeed+2);
 });
 
+test('exhausted tires gradually force a large loss of full-throttle speed until replaced', () => {
+  const road = straight();
+  const car = new VehiclePhysics();
+  const step = 1 / 120;
+  car.tires.fit('soft');
+  drive(car, 20, gas, road);
+  const freshSpeed = car.speed;
+  let largestSpeedDrop = 0;
+
+  for (let tick = 0; tick < 480 / step && car.tires.summary.remaining > 0; tick++) {
+    const before = car.speed;
+    car.update(step, gas, road);
+    largestSpeedDrop = Math.max(largestSpeedDrop, before - car.speed);
+  }
+
+  assert.equal(car.tires.summary.remaining, 0);
+  assert.ok(car.tires.summary.wheels.every((wheel) => wheel.wear === 1));
+  assert.ok(largestSpeedDrop < freshSpeed * 0.01, 'wear slows the car without a one-tick speed clamp');
+  const start = car.z;
+  drive(car, 4, gas, road);
+  assert.ok(car.speed < freshSpeed * 0.7, 'full throttle cannot sustain near-fresh speed on exhausted tires');
+  assert.ok((car.z - start) / 4 < freshSpeed * 0.7, 'the car also covers less distance at full throttle');
+
+  car.tires.fit('soft');
+  assert.equal(car.tires.summary.remaining, 1);
+  drive(car, 20, gas, road);
+  assert.ok(car.speed > freshSpeed * 0.9, 'a new set restores near-fresh speed');
+});
+
 test('brakes shed speed much faster than simply releasing the throttle', () => {
   const braking = new VehiclePhysics();
   const coasting = new VehiclePhysics();

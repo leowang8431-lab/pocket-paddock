@@ -97,7 +97,14 @@ function treadGrip(wear:number):number {
 }
 
 const wetOnDryAbrasion = 1.85;
-const treadSpeed = (wear:number) => 1 - .10 * wear;
+
+/** Speed drops progressively over the last ten percent of tire life. */
+export function tireSpeedFalloff(wear:number):number {
+  const progress=clamp((wear-.90)/.10,0,1);
+  return progress*progress*(3-2*progress);
+}
+
+const treadSpeed = (wear:number) => 1 - .10 * wear - .35 * tireSpeedFalloff(wear);
 
 /** Clean-asphalt reference at operating temperature for race strategy. */
 export function predictTireCondition(compound:TireCompound,weather:WeatherMode,wear:number) {

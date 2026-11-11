@@ -1,6 +1,6 @@
 import {WEATHER_PHYSICS,type WeatherMode} from './conditions';
 import {BRAKE_BUILD_SECONDS,BRAKE_RELEASE_SECONDS,lateralGripForSpeed,steeringAngleForSpeed,WHEELBASE} from './handling';
-import {TireSet} from './tire-physics';
+import {TireSet,tireSpeedFalloff} from './tire-physics';
 import {TRACK_SPEED_SCALE} from './speed-scale';
 import {resolveWallImpulse} from './race-contact';
 export type Surface = 'asphalt' | 'grass' | 'gravel';
@@ -106,7 +106,11 @@ export class VehiclePhysics {
     if(rebound&&this.speed>0&&brakeTarget>0)this.speed=0;
     if(this.brakingFromForward&&Math.abs(this.speed)<=.12)this.speed=0;
     if(throttleTarget===0&&brakeTarget===0)this.speed=damp(this.speed,0,this.surface==='asphalt'?.13:1.8,dt);
-    if(this.speed>maxSpeed&&this.surface!=='asphalt')this.speed=damp(this.speed,maxSpeed,3,dt);
+    if(this.speed>maxSpeed){
+      this.speed=this.surface==='asphalt'
+        ?approach(this.speed,maxSpeed,14*tireSpeedFalloff(this.tires.summary.wear)*dt)
+        :damp(this.speed,maxSpeed,3,dt);
+    }
     this.speed=Math.max(this.speed,Math.min(-7,previousSpeed));
     const absoluteSpeed=Math.abs(this.speed);
     const steeringAngle=steer(this.speed);

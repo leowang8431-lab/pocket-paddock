@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const baseURL=process.env.PP_URL??'http://127.0.0.1:5173/';
+const baseURL=process.env.PP_URL??'http://127.0.0.1:5173/?circuit=monza';
 const executablePath=process.env.CHROME_PATH??(process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':undefined);
 const output=path.resolve(process.env.PP_OUTPUT??'outputs');
 const timeout=Number(process.env.PP_TIMEOUT_MS??210000);

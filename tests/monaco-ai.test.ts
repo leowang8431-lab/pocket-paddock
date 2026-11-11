@@ -18,17 +18,18 @@ const projection=(p:Point,ax:number,az:number,bx:number,bz:number)=>{const dx=bx
 const turn=(a:Point,b:Point,c:Point)=>(b.x-a.x)*(c.z-a.z)-(b.z-a.z)*(c.x-a.x);
 function segmentGap(a:Point,b:Point,c:Point,d:Point){if(turn(a,b,c)*turn(a,b,d)<0&&turn(c,d,a)*turn(c,d,b)<0)return 0;return Math.min(projection(a,c.x,c.z,d.x,d.z),projection(b,c.x,c.z,d.x,d.z),projection(c,a.x,a.z,b.x,b.z),projection(d,a.x,a.z,b.x,b.z));}
 function separate(a:Point[],b:Point[]){for(const poly of [a,b])for(let i=0;i<4;i++){const p=poly[i],q=poly[(i+1)%4],ax=q.z-p.z,az=p.x-q.x,aa=a.map(p=>p.x*ax+p.z*az),bb=b.map(p=>p.x*ax+p.z*az);if(Math.min(Math.max(...aa),Math.max(...bb))-Math.max(Math.min(...aa),Math.min(...bb))<1e-6)return true;}return false;}
-interface Run {race:AiRace;minimumCenterMargin:number;minimumBodyMargin:number;narrowFrames:number;parallelFrames:number;}
+interface Run {race:AiRace;firstLapTimes:number[];minimumCenterMargin:number;minimumBodyMargin:number;narrowFrames:number;parallelFrames:number;}
 const cache=new Map<WeatherMode,Run>();
 function simulate(weather:WeatherMode):Run {
  const existing=cache.get(weather);if(existing)return existing;
- const race=new AiRace(track,5,3,false),result:Run={race,minimumCenterMargin:Infinity,minimumBodyMargin:Infinity,narrowFrames:0,parallelFrames:0};
+ const race=new AiRace(track,5,3,false),result:Run={race,firstLapTimes:[],minimumCenterMargin:Infinity,minimumBodyMargin:Infinity,narrowFrames:0,parallelFrames:0};
  const radius=Math.max(...[[body.min.x,body.min.z],[body.max.x,body.min.z],[body.max.x,body.max.z],[body.min.x,body.max.z]].map(([x,z])=>Math.hypot(x,z)));assert.ok(radius<2.90,'The planner must reserve the full provided GLB footprint');
  for(let frame=0;frame<800/dt;frame++){
   const before=race.rivals.map(r=>({distance:r.distance,lateral:r.lateral,x:r.x,z:r.z}));race.update(dt,weather);
   const polygons=race.rivals.map(rectangle);
   for(let i=0;i<race.rivals.length;i++){
    const r=race.rivals[i],old=before[i],sample=track.sampleAt(r.distance),poly=polygons[i],near=track.roadProjectionAt(r.x,r.z),margin=track.widthAt(near.distance)/2-near.gap;
+   if(r.completedLaps===1&&result.firstLapTimes[i]===undefined)result.firstLapTimes[i]=race.time;
    assert.ok(r.distance>=old.distance&&r.distance-old.distance<=46*TRACK_SPEED_SCALE*dt+1e-8,'Unwrapped progress jumped');assert.ok(Math.abs(r.lateral-old.lateral)<=.95*dt+1e-8,'An AI car snapped sideways into a narrow lane');
    assert.ok(Math.hypot(r.x-old.x,r.z-old.z)<=48*TRACK_SPEED_SCALE*dt+.04,'The visible car teleported while its progress stayed elsewhere');
    assert.ok(Math.hypot(r.x-sample.point.x-sample.right.x*r.lateral,r.z-sample.point.z-sample.right.z*r.lateral)<1e-8,'Visible placement diverges from unwrapped race progress');
@@ -47,7 +48,11 @@ function simulate(weather:WeatherMode):Run {
 }
 
 test('five full-size Monaco opponents complete three dry laps without any visible body leaving the road, touching a wall or crossing another car',()=>{const result=simulate('sunny');assert.ok(result.minimumBodyMargin>.1);});
-test('the same full Monaco three-lap race remains clear in rain and takes longer',()=>{const dry=simulate('sunny'),wet=simulate('rainy');for(let i=0;i<5;i++)assert.ok(wet.race.rivals[i].finishTime!>dry.race.rivals[i].finishTime!*1.05);});
+test('the full Monaco race remains clear in rain and the opening lap takes longer',()=>{
+ const dry=simulate('sunny'),wet=simulate('rainy');
+ // Opening laps isolate the weather effect before the soft tires run out of tread.
+ for(let i=0;i<5;i++)assert.ok(wet.firstLapTimes[i]>dry.firstLapTimes[i]*1.05);
+});
 test('Monaco opponents merge early into narrow streets while retaining parallel lanes on wider straights',()=>{const result=simulate('sunny');assert.ok(result.narrowFrames>500,`Narrow-road observations: ${result.narrowFrames}`);assert.ok(result.parallelFrames>60,`Parallel-lane observations: ${result.parallelFrames}`);});
 
 function playerAt(distance:number,lateral:number,speed:number):AiPlayerObstacle{const s=track.sampleAt(distance);return{x:s.point.x+s.right.x*lateral,z:s.point.z+s.right.z*lateral,heading:Math.atan2(s.tangent.x,s.tangent.z),speed,finished:false};}

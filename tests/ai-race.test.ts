@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Track} from '../src/track.ts';
 import {AiRace,createRaceGrid,PLAYER_GRID_DISTANCE,PLAYER_GRID_LATERAL} from '../src/ai-race.ts';
 import {getDriver} from '../src/team-catalog.ts';
-import {RACE_CAR_HALF_LENGTH} from '../src/race-contact.ts';
+import {RACE_CAR_HALF_LENGTH,RACE_CAR_HALF_WIDTH} from '../src/race-contact.ts';
 
 const track=new Track(),dt=1/120;
 function run(race:AiRace,seconds:number,weather:'sunny'|'rainy'='sunny'){
@@ -46,6 +46,22 @@ test('an unobstructed Monza launch applies full throttle immediately',()=>{
   assert.ok(race.rivals[0].speed>4.5);
 });
 
+test('an AI car actually loses straight-line speed after running its tyres down to zero',()=>{
+  const race=new AiRace(track,1,8,false),rival=race.rivals[0];
+  let freshSpeed=0,exhaustedSpeed=0;
+  while(race.time<900&&!rival.finished){
+    race.update(dt);
+    const station=rival.distance%track.length;
+    if(station<95||station>150)continue;
+    if(rival.tyreWear<.1)freshSpeed=Math.max(freshSpeed,rival.speed);
+    if(rival.tyreWear===1)exhaustedSpeed=Math.max(exhaustedSpeed,rival.speed);
+  }
+  assert.equal(rival.finished,true);
+  assert.ok(freshSpeed>35,'The car builds speed on the main straight with fresh tyres');
+  assert.ok(exhaustedSpeed>0,'The same car still drives after its tyres are exhausted');
+  assert.ok(exhaustedSpeed<freshSpeed*.6,`Worn tyres capped at ${exhaustedSpeed} against ${freshSpeed} on fresh tyres`);
+});
+
 test('AI brakes in advance of Rettifilo and wet conditions lower its planned speed',()=>{
   const race=new AiRace(track),rival=race.rivals[0],corner=track.corners[0].distance;
   rival.distance=corner-90;const straight=race.targetSpeed(rival);
@@ -63,18 +79,20 @@ test('AI brakes in advance of Rettifilo and wet conditions lower its planned spe
 
 test('complete AI races stay on asphalt, progress through three laps and stop exactly once at the finish',()=>{
   const race=new AiRace(track,5,3,false);let previous=race.rivals.map(r=>r.distance),braked=false;
+  const bodyRadius=Math.hypot(RACE_CAR_HALF_LENGTH,RACE_CAR_HALF_WIDTH);
   for(let i=0;i<220/dt;i++){
     race.update(dt);
     for(let j=0;j<race.rivals.length;j++){
       const r=race.rivals[j];assert.ok(Number.isFinite(r.x+r.z+r.heading+r.speed));
       assert.ok(r.distance>=previous[j]);assert.ok(r.distance<=track.length*3);
-      assert.ok(Math.abs(r.lateral)<=2.801);assert.equal(track.surfaceAt(r.x,r.z),'asphalt');
+      assert.ok(Math.abs(r.lateral)+bodyRadius<track.widthAt(r.distance)/2);assert.equal(track.surfaceAt(r.x,r.z),'asphalt');
       assert.ok(r.lap>=1&&r.lap<=3);assert.ok(r.completedLaps>=0&&r.completedLaps<=3);
       if(r.speed>0&&r.speed<15&&r.distance>100)braked=true;previous[j]=r.distance;
     }
   }
   assert.equal(braked,true);assert.ok(race.rivals.every(r=>r.finished&&r.completedLaps===3&&r.lap===3&&r.speed===0));
-  assert.ok(race.rivals.every(r=>r.finishTime!>135&&r.finishTime!<153),'three dry laps stay within the calibrated pace range');
+  assert.ok(race.rivals.every(r=>r.finishTime!>120&&r.finishTime!<153),'three dry laps stay within the calibrated pace range');
+  assert.ok(Math.min(...race.rivals.map(r=>r.finishTime!))<135,'the fastest car gains time from the optimized line');
   const finishes=race.rivals.map(r=>r.finishTime),positions=race.rivals.map(r=>[r.distance,r.x,r.z]);run(race,10);
   assert.deepEqual(race.rivals.map(r=>r.finishTime),finishes);assert.deepEqual(race.rivals.map(r=>[r.distance,r.x,r.z]),positions);
   const table=race.standings(track.length*2.8);assert.equal(table[5].isPlayer,true);assert.ok(table.slice(0,5).every((r,i,all)=>i===0||r.finishTime!>=all[i-1].finishTime!));

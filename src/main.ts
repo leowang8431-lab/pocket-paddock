@@ -35,22 +35,28 @@ import {PitStopAudio} from './pit-stop-audio';
 import type {PitCompound} from './pit-stop-animation';
 import {monacoPitIndex} from './monaco-team-pits';
 import {KMH_PER_SPEED_UNIT} from './speed-scale';
+import {TravelTransition} from './travel-transition';
+import {DANZHOU,TRAVEL_DESTINATIONS} from './travel-map';
 
-let circuitId:CircuitId='monza';
-try{const stored=localStorage.getItem('pocket-paddock.circuit');if(isCircuitId(stored))circuitId=stored;}catch{}
-const requestedCircuit=new URL(location.href).searchParams.get('circuit');if(isCircuitId(requestedCircuit))circuitId=requestedCircuit;
+const arrivedKey='pocket-paddock.travel.arrived';
+function rememberArrival(id:CircuitId){
+  try{localStorage.setItem('pocket-paddock.circuit',id);}catch{}
+  try{sessionStorage.setItem(arrivedKey,id);return true;}catch{return false;}
+}
+const launchUrl=new URL(location.href);
+const requested=launchUrl.searchParams.get('circuit');
+const fallbackDeparture=launchUrl.searchParams.get('departed');
+let lastArrival:CircuitId|undefined;
+let preferred:CircuitId='monza';
+try{const saved=localStorage.getItem('pocket-paddock.circuit');if(isCircuitId(saved))preferred=saved;}catch{}
+try{const saved=sessionStorage.getItem(arrivedKey);if(isCircuitId(saved))lastArrival=saved;}catch{}
+if(!lastArrival&&isCircuitId(requested)&&isCircuitId(fallbackDeparture))lastArrival=fallbackDeparture;
+const firstArrival=lastArrival===undefined;
+let circuitId:CircuitId=isCircuitId(requested)?requested:lastArrival??preferred;
 const ui=new UI();ui.setCircuit(circuitId);document.body.dataset.state='menu';
 const loading=ui.el('loading');
-function showLoading(circuit?:CircuitId){
-  if(circuit){
-    const name=ui.language==='zh'?CIRCUITS[circuit].zh:CIRCUITS[circuit].name;
-    ui.text('loading-title',ui.t('loading.circuit',{circuit:name}));
-    ui.text('loading-detail',ui.t('loading.body'));
-  }
-  ui.root.inert=!!circuit;
-  loading.hidden=!circuit;
-}
-showLoading(circuitId);
+if(ui.root.contains(loading))document.body.append(loading);
+const transition=new TravelTransition(loading,ui.root,()=>ui.language);
 function boot(){
   const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
   renderer.setPixelRatio(1);renderer.setSize(innerWidth,innerHeight);
@@ -85,9 +91,10 @@ function boot(){
   let switchingCircuit=false,revealScheduled=false;
   circuitSelect.onchange=()=>{
     const next=circuitSelect.value;if(!isCircuitId(next)||next===circuitId||race.state!=='menu'||switchingCircuit)return;
-    switchingCircuit=true;showLoading(next);input.clear();
-    try{storage?.setItem('pocket-paddock.circuit',next);}catch{}
+    switchingCircuit=true;transition.prepare(next);input.clear();
     const url=new URL(location.href);url.searchParams.set('circuit',next);
+    if(rememberArrival(circuitId))url.searchParams.delete('departed');
+    else url.searchParams.set('departed',circuitId);
     requestAnimationFrame(()=>requestAnimationFrame(()=>location.assign(url.href)));
   };
   let renderDirty=true;
@@ -290,7 +297,9 @@ function boot(){
   window.addEventListener('blur',()=>{race.pause();pitAudio.sync(pit.summary.serviceElapsed,false,1);});
   window.addEventListener('pagehide',event=>{if(!event.persisted){pitView.cancel();pitAudio.dispose();}});
   window.addEventListener('pageshow',event=>{
-    if(event.persisted&&switchingCircuit){switchingCircuit=false;circuitSelect.value=circuitId;showLoading();}
+    if(!event.persisted||!revealScheduled)return;
+    rememberArrival(circuitId);
+    if(switchingCircuit){switchingCircuit=false;circuitSelect.value=circuitId;transition.hide();}
   });
   window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;chase.snap();applyQuality();});
   const contact=new THREE.Mesh(new THREE.PlaneGeometry(3.1,5.2),new THREE.MeshBasicMaterial({map:contactShadow(),transparent:true,depthWrite:false,opacity:.42}));contact.rotation.x=-Math.PI/2;scene.add(contact);
@@ -512,13 +521,31 @@ function boot(){
     const renderStart=performance.now();renderer.render(scene,camera);renderMs=performance.now()-renderStart;renderDirty=false;
     if(!loading.hidden&&!switchingCircuit&&!revealScheduled&&car.status!=='loading'){
       revealScheduled=true;
-      requestAnimationFrame(()=>{if(!switchingCircuit)showLoading();});
+      requestAnimationFrame(()=>{
+        if(!switchingCircuit)void transition.reveal(circuitId,firstArrival).then(()=>rememberArrival(circuitId));
+      });
     }
   }
   requestAnimationFrame(frame);
 }
 function contactShadow(){const c=document.createElement('canvas');c.width=128;c.height=128;const ctx=c.getContext('2d')!;const gradient=ctx.createRadialGradient(64,64,12,64,64,64);gradient.addColorStop(0,'rgba(13,38,31,.8)');gradient.addColorStop(1,'rgba(13,38,31,0)');ctx.fillStyle=gradient;ctx.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);}
-// Give the loading screen a paint before the synchronous track construction.
-requestAnimationFrame(()=>requestAnimationFrame(()=>{
-  try{boot();}catch(error){console.error(error);showLoading();const box=document.createElement('section');box.className='error-box';const h=document.createElement('h2'),p=document.createElement('p'),button=document.createElement('button');const translate=()=>{h.textContent=ui.t('error.title');p.textContent=ui.t('error.body',{error:String(error)});button.textContent=ui.t('error.reload');};translate();document.addEventListener('paddock-language',translate);button.onclick=()=>location.reload();box.append(h,p,button);ui.root.append(box);}
-}));
+async function startPaddock(){
+  try{
+    if(firstArrival&&!isCircuitId(requested)){
+      circuitId=await transition.choose(preferred);
+      ui.setCircuit(circuitId);
+      launchUrl.searchParams.set('circuit',circuitId);
+      if(location.protocol!=='file:')try{history.replaceState(history.state,'',launchUrl);}catch{}
+    }
+    if(firstArrival||lastArrival!==circuitId){
+      const origin=lastArrival?TRAVEL_DESTINATIONS[lastArrival]:DANZHOU;
+      await transition.journey(circuitId,origin);
+    }else transition.prepare(circuitId);
+    // Paint the completed circuit outline before building the scenery on the main thread.
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+    boot();
+  }catch(error){
+    console.error(error);transition.hide();const box=document.createElement('section');box.className='error-box';const h=document.createElement('h2'),p=document.createElement('p'),button=document.createElement('button');const translate=()=>{h.textContent=ui.t('error.title');p.textContent=ui.t('error.body',{error:String(error)});button.textContent=ui.t('error.reload');};translate();document.addEventListener('paddock-language',translate);button.onclick=()=>location.reload();box.append(h,p,button);ui.root.append(box);
+  }
+}
+void startPaddock();

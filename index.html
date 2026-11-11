@@ -19,8 +19,8 @@
       padding: 24px;
       overflow: auto;
       text-align: center;
-      background: #f6f4e8;
-      color: #173f38;
+      background: #162a21;
+      color: #fff4e2;
       font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
     }
     #loading[hidden] { display: none; }
@@ -47,7 +47,7 @@
     }
     #loading-detail {
       margin: 0;
-      color: #486554;
+      color: #d9e5d9;
       font-size: 14px;
       line-height: 1.55;
     }
@@ -70,23 +70,19 @@
 <body>
   <section id="loading" role="status" aria-atomic="true">
     <span class="loading-wordmark">Pocket Paddock</span>
-    <h1 id="loading-title">正在载入蒙扎…</h1>
+    <h1 id="loading-title">正在打开围场…</h1>
     <p id="loading-detail">正在准备 3D 场景与赛车模型，请稍候。</p>
     <span class="loading-wheel" aria-hidden="true"></span>
   </section>
   <script id="loading-bootstrap">
     (() => {
-      const names = { monza: ["蒙扎", "Monza"], spa: ["斯帕", "Spa-Francorchamps"], monaco: ["摩纳哥", "Monaco"] };
-      const requested = new URLSearchParams(location.search).get("circuit");
-      let saved, english = false;
-      try {
-        saved = localStorage.getItem("pocket-paddock.circuit");
-        english = localStorage.getItem("pocket-paddock.language") === "en";
-      } catch {}
-      const circuit = Object.hasOwn(names, requested) ? requested : Object.hasOwn(names, saved) ? saved : "monza";
+      let english = false;
+      try { english = localStorage.getItem("pocket-paddock.language") === "en"; } catch {}
       document.documentElement.lang = english ? "en" : "zh-CN";
-      document.getElementById("loading-title").textContent = english ? "Loading " + names[circuit][1] + "…" : "正在载入" + names[circuit][0] + "…";
-      if (english) document.getElementById("loading-detail").textContent = "Preparing the 3D circuit and car models. Please wait.";
+      if (english) {
+        document.getElementById("loading-title").textContent = "Opening your paddock…";
+        document.getElementById("loading-detail").textContent = "Preparing the game. Please wait.";
+      }
     })();
   </script>
   <div id="app"></div>

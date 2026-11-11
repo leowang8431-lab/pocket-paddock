@@ -11,6 +11,8 @@ The current source version is **0.15.0**.
 - AI pit strategy compares the time gained on fresh tires with the cost of stopping and the race distance left. The timing tower shows their pit entry, service and exit.
 - Car contact transfers momentum between both cars. Side impacts create yaw and lateral motion that taper off as the tires regain grip.
 - The timing tower measures each gap to the car directly ahead. Track-limit violations add three seconds to lap and race times. Finishers are ranked by their adjusted times.
+- Top speed drops sharply through the last 10% of tire life. At 0%, the tire speed limit is 55% of its fresh value for both the player and AI. Fitting fresh tires restores the full limit.
+- AI compares an optimized racing line with its current lane using predicted braking and acceleration over the next section. Nearby traffic and pit approaches take priority. The planner uses each circuit's road width and keeps the line centered through Monaco's narrowest streets.
 
 ### 中文概览
 
@@ -19,8 +21,20 @@ The current source version is **0.15.0**.
 - 人机根据换新胎的收益、进站成本和剩余赛程规划停站，排名栏显示进站、换胎和出站。
 - 碰撞会在两车之间传递动量，侧撞后的转动与横移随轮胎恢复抓地而逐步减弱。
 - 排名栏显示相邻车辆的实测时间差。越界罚时每次 3 秒，计入单圈和完赛用时，完赛车手按调整后的用时排名。
+- 轮胎余量进入最后 10% 后，极速明显下降。余量为 0% 时，玩家与 AI 的轮胎限速均为同款新胎的 55%。换上新胎即恢复上限。
+- AI 根据前方路段的制动和加速预估用时，在优化走线与当前车道之间选择。有近车或准备进站时优先留出安全空间。走线按各赛道路宽生成，摩纳哥最窄路段保持居中。
 
 本日志依据本地开发仓库的 `package.json`、各版本 README、代码差异与保留的验证脚本回溯整理。相同版本号下的后续优化归入同一节。标题取自源码版本，GitHub 发布和标签以仓库中的记录为准。最早保留的独立源码快照为 0.2.0，早期可玩原型按功能归纳。
+
+### 赛道进场与切换 · Circuit Arrivals and Transfers
+
+- Choose Monza, Spa-Francorchamps, or Monaco on your first visit. The flight departs from Danzhou, Hainan, China. Further circuit changes depart from the last circuit you reached.
+- The map highlights the destination country and traces the circuit. On the first arrival, five start lights turn on in sequence and the garage door rises once the car and scenery are ready.
+- The map works offline. The opening sequence supports English and Chinese, and respects the browser's reduced-motion preference.
+
+- 首次进入可选蒙扎、斯帕或摩纳哥，飞机从中国海南儋州起飞。之后换赛道从当前已抵达的赛道出发。
+- 抵达时高亮目的地国家并描出赛道。首站车库就绪后，五盏发车灯依次点亮，车库门升起。
+- 地图支持离线使用。进场界面支持中英文，并遵循浏览器的减少动态效果设置。
 
 ### 同版本后续优化 · 人机进站与竞速规则
 

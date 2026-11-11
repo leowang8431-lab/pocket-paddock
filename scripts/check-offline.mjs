@@ -12,6 +12,7 @@ page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()
 page.on('request',r=>{if(/^https?:/.test(r.url()))network.push(r.url());});await page.route(/^https?:/,r=>r.abort());
 try{
  await page.goto(pathToFileURL(path.resolve('outputs',fileName)).href,{waitUntil:'load'});
+ await page.locator('[data-travel-circuit="monza"]').click();
  await page.locator('#model-status[data-status="ready"]').waitFor({timeout:30000});assert.equal(await page.evaluate(()=>typeof window.__PP),'undefined');
  assert.equal(await page.locator('a.brand').getAttribute('href'),page.url());
  await page.locator('[data-menu-view=side]').click();assert.equal(await page.locator('[data-menu-view=side]').getAttribute('aria-pressed'),'true');await page.locator('[data-menu-view=front]').click();

@@ -1,0 +1,124 @@
+#loading.travel-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff4e2;
+  background: #162a21;
+  font-family: Inter, "Microsoft YaHei UI", system-ui, sans-serif;
+}
+#loading.travel-transition[hidden], #loading.travel-transition [hidden] { display: none !important; }
+#loading.travel-transition[data-travel-phase="garage"],
+#loading.travel-transition[data-travel-phase="reveal"] { background: transparent; }
+.travel-splash, .travel-door, .travel-flight, .travel-route { position: absolute; inset: 0; }
+.travel-splash, .travel-door { display: grid; place-items: center; text-align: center; }
+.travel-splash { align-content: center; gap: 12px; }
+.travel-splash strong { font-size: clamp(1.5rem, 4vw, 3rem); }
+.travel-splash p, .travel-door-note { margin: 0; color: #e2eadb; }
+.travel-door {
+  background:
+    radial-gradient(ellipse at 50% 37%, #7c9a6d33, transparent 66%),
+    repeating-linear-gradient(180deg, transparent 0 26px, #080f0ac4 27px 30px, #9fb29b48 31px 32px),
+    linear-gradient(150deg, #35483a, #17231b);
+  border-bottom: clamp(7px, 1.8vw, 18px) solid #121b15;
+  box-shadow: 0 9px 24px #101b1699;
+  will-change: transform;
+}
+.travel-door::before, .travel-door::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: clamp(5px, 2.4vw, 24px);
+  border-right: 1px solid #6c7d6a70;
+  background: linear-gradient(90deg, #0f1a12, #293c2e);
+}
+.travel-door::after { inset: 0 0 0 auto; transform: scaleX(-1); }
+.travel-door-copy { width: min(94%, 720px); padding: 22px 16px; background: radial-gradient(ellipse, #1a281fe8, #1a281f00 74%); }
+.travel-door-copy h1 {
+  margin: 0 0 12px;
+  font: 800 clamp(2rem, 7vw, 5.4rem)/1 "Barlow Condensed", Bahnschrift, "Arial Narrow", sans-serif;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  text-shadow: 0 3px 20px #101a12;
+}
+.travel-lights {
+  display: flex;
+  width: max-content;
+  gap: clamp(7px, 1.45vw, 17px);
+  margin: 0 auto clamp(16px, 3vw, 35px);
+  padding: clamp(8px, 1.4vw, 16px) clamp(11px, 1.8vw, 22px);
+  border: 1px solid #69746b;
+  border-radius: 6px;
+  background: linear-gradient(#29322c, #111813);
+  box-shadow: inset 0 1px #78847868, 0 5px 12px #0a0e0ad0;
+}
+.travel-lights i {
+  width: clamp(17px, 3vw, 38px);
+  aspect-ratio: 1;
+  border: 2px solid #111813;
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 35%, #623932, #351d1a 64%, #231513);
+  box-shadow: inset 0 0 0 1px #703c34, 0 0 0 1px #43332d;
+}
+.travel-lights i.lit {
+  background: radial-gradient(circle at 44% 38%, #ffd6b0 0%, #ff7661 24%, #fa3229 61%, #982420 100%);
+  box-shadow: inset 0 0 0 1px #ff9b7b, 0 0 10px #ff5448a6, 0 0 23px #f0353b5c;
+}
+.travel-choices { display: flex; justify-content: center; gap: 10px; margin-top: clamp(19px, 4vw, 34px); }
+.travel-choices button {
+  min-width: 0;
+  padding: 11px clamp(9px, 2vw, 22px);
+  color: #fff4e2;
+  border: 1px solid #91a28f;
+  border-radius: 6px;
+  background: #304b3b;
+}
+.travel-choices button:hover, .travel-choices button:focus-visible { background: #426451; }
+.travel-choices button strong, .travel-choices button span { display: block; }
+.travel-choices button span { margin-top: 4px; font-size: .78rem; color: #d8e6d8; }
+.travel-flight { background: radial-gradient(ellipse at 54% 45%, #294a3d, #122821 76%); }
+.travel-flight canvas, .travel-route canvas { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.travel-flight-copy {
+  position: absolute;
+  top: max(18px, 5vh);
+  left: max(16px, 5.4vw);
+  padding: 8px 19px 9px 12px;
+  border-left: 3px solid #fbd48b;
+  text-align: left;
+  background: linear-gradient(90deg, #14291feb, #14291f00);
+  text-shadow: 0 1px 9px #10231a;
+}
+.travel-flight-copy p, .travel-route-copy p { margin: 0 0 8px; color: #d9e5d9; font-size: clamp(.78rem, 1.4vw, 1rem); }
+.travel-flight-copy strong { font-size: clamp(1.15rem, 3vw, 2.4rem); }
+.travel-credit { position: absolute; right: 15px; bottom: 12px; color: #d0e1d2; font-size: .69rem; }
+.travel-route {
+  display: grid;
+  grid-template-columns: minmax(0, .86fr) minmax(0, 1.14fr);
+  align-items: center;
+  padding: clamp(20px, 7vw, 8.5vh);
+  text-align: left;
+  background: radial-gradient(ellipse at 70% 40%, #3c5645, transparent 72%), linear-gradient(125deg, #19271e, #121b16);
+}
+.travel-route::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(#97b59813 1px, transparent 1px), linear-gradient(90deg, #97b59813 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: linear-gradient(90deg, transparent, #000 70%);
+}
+.travel-route-copy, .travel-route canvas { z-index: 1; }
+.travel-route-copy { min-width: 0; padding: 0 14px; border-left: 3px solid #ff5a4e; }
+.travel-route-copy strong { display: block; font: 800 clamp(1.15rem, 3.25vw, 3.7rem)/1 "Barlow Condensed", Bahnschrift, sans-serif; }
+.travel-route-copy span { display: block; margin-top: 10px; color: #d0dfcd; }
+.travel-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 600px) and (orientation: portrait) {
+  .travel-door-copy { padding-inline: 8px; }
+  .travel-choices { gap: 6px; }
+  .travel-choices button { overflow-wrap: anywhere; }
+  .travel-route { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+}

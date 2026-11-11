@@ -14,6 +14,13 @@ test('actual wear, rather than a fixed lap, decides whether to stop',()=>{
   assert.equal(chooseAiPitCompound({...monza,pitLoss:90}),null);
 });
 
+test('an exhausted set justifies a stop while enough distance remains to recover the loss',()=>{
+  const exhausted={...monza,wear:1,stintDistance:4*lapLength};
+  const replacement=chooseAiPitCompound(exhausted);
+  assert.ok(replacement&&replacement!=='wet');
+  assert.equal(chooseAiPitCompound({...exhausted,remainingDistance:lapLength}),null);
+});
+
 test('soft tires stay out while healthy and can switch to a durable set for a long finish',()=>{
   const early={...monza,compound:'soft' as const,wear:.27,stintDistance:lapLength,remainingDistance:7.05*lapLength};
   assert.equal(chooseAiPitCompound(early),null);

@@ -9,6 +9,7 @@ import {PLAYER_GRID_DISTANCE,startGridSlot,type RaceGridSlot} from './start-grid
 import {createMonacoDrsZones,createMonzaDrsZones,createSpaDrsZones,withinZone,type DrsZone} from './drs';
 import {AiPitRoutes,type AiPitVisit,type AiPitPhase} from './ai-pit-route';
 import {chooseAiPitCompound} from './ai-pit-strategy';
+import {AiRacingLine} from './ai-racing-line';
 import {PIT_SPEED_LIMIT} from './pit-lane-controller';
 import {TRACK_LIMIT_DELAY_SECONDS,TRACK_LIMIT_MARGIN,TRACK_LIMIT_PENALTY_SECONDS} from './race';
 
@@ -27,14 +28,17 @@ export interface RaceStanding {
 export interface AiPlayerObstacle {x:number;z:number;heading:number;speed:number;finished:boolean;pitLane?:boolean;}
 interface RivalPlan {
   skill:number;targetLane:number;homeLane:number;passCooldown:number;reaction:number;
+  lineBlend:number;lineReviewAt:number;preferFastLine:boolean;
   tires:TireSet;previousDistance:number;laneVelocity:number;lateralImpulse:number;yawImpulse:number;yawOffset:number;impactRecovery:number;
   stintStart:number;lapStart:number;lapTime:number;pittedThisLap:boolean;
   visit?:AiPitVisit;nextCompound?:TireCompound;
   offroadTime:number;offroadCharged:boolean;
 }
 interface TrafficCar {gap:number;lateral:number;speed:number;}
+interface SpeedPlan {top:number;braking:number;buffer:number;mechanical:number;aero:number;skill:number;engine:number;}
 const clamp=(v:number,min:number,max:number)=>Math.max(min,Math.min(max,v));
 const signedAngle=(value:number)=>Math.atan2(Math.sin(value),Math.cos(value));
+const laneScale=(curvature:number,lateral:number)=>Math.max(.35,1-curvature*lateral);
 const contactRangeSquared=4*(RACE_CAR_HALF_LENGTH**2+RACE_CAR_HALF_WIDTH**2);
 const maxSpeed=40*TRACK_SPEED_SCALE;
 const maxDrsSpeed=44.5*TRACK_SPEED_SCALE;
@@ -66,6 +70,9 @@ export class AiRace {
   private readonly curvature:Float64Array;
   private readonly drsZones:readonly DrsZone[];
   private readonly pitRoutes:AiPitRoutes;
+  private readonly racingLine:AiRacingLine;
+  private readonly previewSpeeds=new Float64Array(19);
+  private readonly previewLengths=new Float64Array(18);
   private readonly plans:RivalPlan[]=[];
   private readonly gridOrder=new Map<string,number>();
   private playerGridDistance=PLAYER_GRID_DISTANCE;
@@ -79,6 +86,7 @@ export class AiRace {
     this.totalLaps=clamp(Math.floor(Number.isFinite(totalLaps)?totalLaps:3),1,99);
     this.drsZones=track.id==='spa'?createSpaDrsZones(track):track.id==='monaco'?createMonacoDrsZones(track):createMonzaDrsZones(track);
     this.pitRoutes=new AiPitRoutes(track);
+    this.racingLine=new AiRacingLine(track);
     this.curvature=new Float64Array(track.samples.length);
     const step=track.length/track.samples.length,span=3;
     for(let i=0;i<this.curvature.length;i++){
@@ -107,7 +115,7 @@ export class AiRace {
       tires.fit(compound,weather);
       this.rivals.push(rival);
       slots.push({id:rival.id,...slot});
-      this.plans.push({skill:skills[i],targetLane:lateral,homeLane:lateral,passCooldown:0,reaction:i*.12,tires,previousDistance:rival.distance,laneVelocity:0,lateralImpulse:0,yawImpulse:0,yawOffset:0,impactRecovery:0,
+      this.plans.push({skill:skills[i],targetLane:lateral,homeLane:lateral,passCooldown:0,reaction:i*.12,lineBlend:0,lineReviewAt:0,preferFastLine:false,tires,previousDistance:rival.distance,laneVelocity:0,lateralImpulse:0,yawImpulse:0,yawOffset:0,impactRecovery:0,
         stintStart:distance,lapStart:0,lapTime:0,pittedThisLap:false,offroadTime:0,offroadCharged:false});
       this.place(rival,0);
     }
@@ -176,7 +184,14 @@ export class AiRace {
     }
     // If an unusual collision/restart leaves a car late to merge, brake first
     // rather than snapping its lateral position inside the next narrow road.
-    for(let ahead=3;ahead<=100;ahead+=3){const excess=Math.abs(rival.lateral)-this.monacoLaneLimitAt(rival.distance+ahead);if(excess>.05)target=Math.min(target,ahead/(excess/.95+.45));}
+    const blend=plan.lineBlend,baseOffset=plan.targetLane*(1-blend);
+    const lineError=blend>0?rival.lateral-baseOffset-this.racingLine.offsetAt(rival.distance)*blend:0;
+    for(let ahead=3;ahead<=100;ahead+=3){
+      const station=rival.distance+ahead;
+      const offset=blend>0?baseOffset+this.racingLine.offsetAt(station)*blend+lineError*Math.exp(-ahead/Math.max(6,rival.speed*.65)):rival.lateral;
+      const excess=Math.abs(offset)-this.monacoLaneLimitAt(station);
+      if(excess>.05)target=Math.min(target,ahead/(excess/.95+.45));
+    }
     return target;
   }
   private openTrafficTarget(rival:AiRival,plan:RivalPlan,target:number,weather:WeatherMode):number {
@@ -195,12 +210,12 @@ export class AiRace {
     return Math.min(target,Math.max(0,blocker.speed+(blocker.gap-desiredGap)*1.2));
   }
   private considerPass(rival:AiRival,plan:RivalPlan,blocker:TrafficCar,player:TrafficCar|null,target:number,limit:number):void {
-    if(this.time<2.5||plan.passCooldown>0||plan.impactRecovery>0||Math.abs(plan.targetLane-rival.lateral)>.3)return;
+    if(this.time<2.5||plan.passCooldown>0||plan.impactRecovery>0||plan.lineBlend<.1&&Math.abs(plan.targetLane-rival.lateral)>.3)return;
     const advantage=target-blocker.speed,closing=rival.speed-blocker.speed;
     // A slower car only warrants a pass if we can catch it in a few seconds.
     if(advantage<1.15||blocker.gap>10+Math.max(0,closing,advantage)*3.5)return;
     const passingLane=-Math.sign(blocker.lateral||rival.lateral||plan.homeLane)*limit;
-    if(Math.abs(passingLane-blocker.lateral)<2.75||Math.abs(passingLane-plan.targetLane)<.4)return;
+    if(Math.abs(passingLane-blocker.lateral)<2.75||Math.abs(passingLane-rival.lateral)<.4)return;
     const changeTime=Math.abs(passingLane-rival.lateral)/.95;
     const passSpeed=Math.max(rival.speed,Math.min(target,blocker.speed+6));
     const sideBySideDistance=Math.max(22,passSpeed*(changeTime+1));
@@ -225,26 +240,84 @@ export class AiRace {
     plan.targetLane=passingLane;
     plan.passCooldown=changeTime+1.25;
   }
-  /** Look far enough ahead to brake before a tight turn, rather than changing
-   * speed only after the car has already reached the corner apex. */
-  targetSpeed(rival:AiRival,weather:WeatherMode='sunny'):number {
-    const plan=this.plans[this.rivals.indexOf(rival)],skill=plan?.skill??.96;
+  private speedPlan(rival:AiRival,weather:WeatherMode,plan?:RivalPlan):SpeedPlan {
+    const skill=plan?.skill??.96;
     const wet=WEATHER_PHYSICS[weather],grip=plan?.tires.gripMultiplier??1;
     const cap=this.drsAvailable(rival,weather)?maxDrsSpeed:maxSpeed;
     const top=cap*(.97+.03*skill)*(weather==='rainy'?.91:1)*(plan?.tires.speedMultiplier??1);
     const narrow=this.track.id==='monaco';
-    const braking=(narrow?28:30)*wet.braking*grip;
-    const margin=narrow?.77:.98;
-    const brakingBuffer=narrow?5:4;
-    const mechanical=margin*lateralGripForSpeed(0,weather)*grip;
-    const aero=margin*8.5*wet.grip*grip/(40*40);
-    let target=top;
+    const margin=narrow?.82:.98;
+    return{top,braking:(narrow?28:30)*wet.braking*grip,buffer:narrow?5:4,skill,
+      mechanical:margin*lateralGripForSpeed(0,weather)*grip,aero:margin*8.5*wet.grip*grip/(40*40),
+      engine:15.5*TRACK_SPEED_SCALE*wet.acceleration};
+  }
+  private lineCurvature(distance:number,lane:number,blend:number){
+    const center=this.curvatureAt(distance),fixed=center/laneScale(center,lane);
+    return blend===0?fixed:fixed+(this.racingLine.curvatureAt(distance)-fixed)*blend;
+  }
+  private cornerSpeed(curve:number,pace:SpeedPlan){
+    return Math.min(pace.top,Math.sqrt(pace.mechanical/Math.max(.001,Math.abs(curve)-pace.aero))*pace.skill);
+  }
+  private pathMetric(distance:number,lane:number,blend:number){
+    const fixed=laneScale(this.curvatureAt(distance),lane);
+    return blend===0?fixed:fixed+(this.racingLine.metricAt(distance)-fixed)*blend;
+  }
+  private laneRate(blend:number){return .95+(this.track.id==='monaco'?0:6.6*blend);}
+  private pathSpeedLimit(distance:number,lane:number,blend:number,pace:SpeedPlan,metric:number){
+    const corner=this.cornerSpeed(this.lineCurvature(distance,lane,blend),pace);
+    if(blend===0)return corner;
+    const slope=Math.abs(this.racingLine.slopeAt(distance)*blend);
+    return slope<.001?corner:Math.min(corner,this.laneRate(blend)*metric/slope);
+  }
+  /** Integrate the speed envelope backward for braking and forward for exit speed. */
+  private lineTime(rival:AiRival,lane:number,pace:SpeedPlan,fast:boolean){
+    const speeds=this.previewSpeeds,lengths=this.previewLengths,blend=Number(fast),step=6;
+    for(let i=speeds.length-1;i>=0;i--){
+      const distance=rival.distance+i*step,metric=this.pathMetric(distance,lane,blend);
+      const cap=this.pathSpeedLimit(distance,lane,blend,pace,metric);
+      if(i===lengths.length){speeds[i]=cap;continue;}
+      const length=lengths[i]=step*metric;
+      speeds[i]=Math.min(cap,Math.sqrt(speeds[i+1]**2+2*pace.braking*length));
+    }
+    let speed=Math.min(speeds[0],Math.max(0,rival.speed)),time=0;
+    for(let i=0;i<lengths.length;i++){
+      const acceleration=pace.engine*Math.max(0,1-speed/(55*TRACK_SPEED_SCALE));
+      const exitSpeed=Math.min(speeds[i+1],Math.sqrt(speed**2+2*acceleration*lengths[i]));
+      time+=2*lengths[i]/Math.max(1,speed+exitSpeed);speed=exitSpeed;
+    }
+    const offset=fast?this.racingLine.offsetAt(rival.distance):lane;
+    return time+.045*Math.abs(offset-rival.lateral);
+  }
+  private updateLine(index:number,pace:SpeedPlan,dt:number){
+    const rival=this.rivals[index],plan=this.plans[index],length=this.track.length;
+    const isClose=(gap:number,speed:number)=>Math.abs(gap)<8+.65*Math.max(0,gap>0?rival.speed-speed:speed-rival.speed);
+    const player=this.playerAt(rival.distance);
+    const traffic=player&&isClose(player.gap,player.speed)||this.rivals.some((other,i)=>i!==index&&!other.finished&&this.onRaceLane(i)&&
+      isClose(signedDistance(other.distance-rival.distance,length),other.speed));
+    const pitAhead=(this.pitRoutes.entryDistance-rival.distance%length+length)%length;
+    const preparingPit=this.pitStopsEnabled&&rival.tyreWear>.45&&this.totalLaps*length-rival.distance>length&&pitAhead<45;
+    const available=this.time>3.5&&rival.distance>=0&&!traffic&&!preparingPit&&plan.passCooldown===0&&plan.impactRecovery===0;
+    if(available&&this.time>=plan.lineReviewAt){
+      const fixed=this.lineTime(rival,plan.targetLane,pace,false),fast=this.lineTime(rival,plan.targetLane,pace,true);
+      plan.preferFastLine=fast<fixed+(plan.preferFastLine?.10:-.025);
+      plan.lineReviewAt=this.time+.35;
+    }
+    const target=Number(available&&plan.preferFastLine);
+    plan.lineBlend+=clamp(target-plan.lineBlend,-2.5*dt,1.25*dt);
+  }
+  /** Look ahead along the chosen route to brake before the apex. */
+  targetSpeed(rival:AiRival,weather:WeatherMode='sunny'):number {
+    const plan=this.plans[this.rivals.indexOf(rival)];
+    return this.brakingTarget(rival,plan,this.speedPlan(rival,weather,plan));
+  }
+  private brakingTarget(rival:AiRival,plan:RivalPlan|undefined,pace:SpeedPlan):number {
+    const lane=plan?.targetLane??0,blend=plan?.lineBlend??0;
+    let target=pace.top,length=0;
     for(let ahead=0;ahead<=95;ahead+=5){
-      const curve=Math.abs(this.curvatureAt(rival.distance+ahead));
-      // Solve curvature × speed² against the same mechanical and aero grip
-      // as the player, with a margin for traffic and the centre-line route.
-      const corner=Math.min(top,Math.sqrt(mechanical/Math.max(.001,curve-aero))*skill);
-      target=Math.min(target,Math.sqrt(corner*corner+2*braking*Math.max(0,ahead-brakingBuffer)));
+      const distance=rival.distance+ahead,metric=this.pathMetric(distance,lane,blend);
+      const corner=this.pathSpeedLimit(distance,lane,blend,pace,metric);
+      target=Math.min(target,Math.sqrt(corner**2+2*pace.braking*Math.max(0,length-pace.buffer)));
+      length+=5*metric;
     }
     return target;
   }
@@ -257,7 +330,8 @@ export class AiRace {
     const gate=entry+(Math.floor((plan.previousDistance-entry)/length)+1)*length;
     if(rival.distance<gate||gate<0)return;
     const bay=this.pitRoutes.bayId(rival.team);
-    if(this.plans.some(other=>other.visit&&(other.visit.bayId===bay||other.visit.laneArc<16)))return;
+    if(this.plans.some((other,i)=>other.visit&&(other.visit.bayId===bay||other.visit.laneArc<16&&
+      Math.hypot(this.rivals[i].x-rival.x,this.rivals[i].z-rival.z)<10)))return;
     if(this.playerObstacle?.pitLane&&this.pitRoutes.bayId(this.playerTeam)===bay)return;
     const remainingDistance=this.totalLaps*length-rival.distance;
     const lapTime=plan.lapTime||length/(weather==='rainy'?28:31);
@@ -273,6 +347,14 @@ export class AiRace {
   }
   private pitTrafficLimit(index:number,visit:AiPitVisit){
     const rival=this.rivals[index],fx=Math.sin(rival.heading),fz=Math.cos(rival.heading);
+    // Leave the garage only when there is room to cross back into the fast lane.
+    // Cars stopped in other bays do not reserve that lane.
+    if(visit.phase==='exit'&&visit.laneArc<=visit.stopArc+.05&&this.plans.some((plan,i)=>{
+      const other=plan.visit,speed=this.rivals[i].speed;
+      if(i===index||!other||speed<.5||other.phase==='service')return false;
+      const gap=visit.stopArc-other.laneArc;
+      return gap> -22&&gap<speed*3.3;
+    }))return 0;
     let limit=PIT_SPEED_LIMIT;
     const follow=(other:Pick<AiPlayerObstacle,'x'|'z'|'heading'|'speed'>)=>{
       const dx=other.x-rival.x,dz=other.z-rival.z;
@@ -307,6 +389,7 @@ export class AiRace {
     }
     if(visit.phase==='done'){
       plan.visit=undefined;plan.nextCompound=undefined;plan.targetLane=plan.homeLane;
+      plan.lineBlend=0;plan.lineReviewAt=0;plan.preferFastLine=false;
       plan.stintStart=rival.distance;
       plan.laneVelocity=plan.lateralImpulse=plan.yawImpulse=plan.yawOffset=plan.impactRecovery=0;
     }
@@ -331,7 +414,9 @@ export class AiRace {
       if(rival.finished||waitingForStart&&plan.impactRecovery===0)continue;
       if(plan.visit){this.drivePit(i,dt,weather);continue;}
       plan.passCooldown=Math.max(0,plan.passCooldown-dt);
-      let target=this.targetSpeed(rival,weather);
+      const pace=this.speedPlan(rival,weather,plan);
+      this.updateLine(i,pace,dt);
+      let target=this.brakingTarget(rival,plan,pace);
       if(this.track.id==='monaco')target=this.monacoTrafficTarget(rival,i,target,this.monacoLanePreview(rival),weather);
       else target=this.openTrafficTarget(rival,plan,target,weather);
       const offRoad=Math.abs(rival.lateral)>this.track.widthAt(rival.distance)/2;
@@ -339,11 +424,13 @@ export class AiRace {
       if(surface!=='asphalt')target=Math.min(target,surface==='grass'?13:17);
       target*=1-.32*Math.min(1,Math.abs(plan.yawOffset));
       const grip=plan.tires.gripMultiplier;
-      const lateralDemand=this.curvatureAt(rival.distance)*rival.speed**2;
+      const centerCurve=this.curvatureAt(rival.distance);
+      const curve=this.lineCurvature(rival.distance,plan.targetLane,plan.lineBlend);
+      const lateralDemand=curve*rival.speed**2;
       const lateralGrip=lateralGripForSpeed(rival.speed,weather,surface);
       const gripUse=lateralDemand/Math.max(.1,lateralGrip*grip);
       const traction=Math.sqrt(Math.max(0,1-gripUse**2));
-      const engine=15.5*TRACK_SPEED_SCALE*wet.acceleration*Math.max(0,1-rival.speed/(55*TRACK_SPEED_SCALE));
+      const engine=pace.engine*Math.max(0,1-rival.speed/(55*TRACK_SPEED_SCALE));
       const acceleration=Math.min(engine,30*wet.grip*grip*traction);
       const steeringAuthority=1-.8*clamp(plan.impactRecovery/.32,0,1);
       const braking=32.5*wet.braking*grip*steeringAuthority;
@@ -354,14 +441,20 @@ export class AiRace {
       const minimumSpeed=Math.min(0,rival.speed);
       rival.speed=clamp(rival.speed+(drive-gradeForce)*dt,minimumSpeed,Math.max(target,rival.speed));
       const x=rival.x,z=rival.z,heading=rival.heading;
-      const laneRate=Math.min(.95,Math.abs(rival.speed)*.15)*steeringAuthority;
-      const laneError=plan.targetLane-rival.lateral,laneAcceleration=6.5;
-      const wantedLaneVelocity=Math.sign(laneError)*Math.min(laneRate,Math.sqrt(2*laneAcceleration*Math.abs(laneError)));
+      const blend=plan.lineBlend;
+      const pathOffset=blend===0?plan.targetLane:plan.targetLane+(this.racingLine.offsetAt(rival.distance)-plan.targetLane)*blend;
+      const scale=laneScale(centerCurve,rival.lateral);
+      const laneRate=Math.min(this.laneRate(blend),Math.abs(rival.speed)*.2)*steeringAuthority;
+      const laneError=pathOffset-rival.lateral,laneAcceleration=6.5+(this.track.id==='monaco'?0:10*blend);
+      const lead=blend===0?0:blend*this.racingLine.slopeAt(rival.distance)*rival.speed/scale;
+      const correction=blend>0?laneError*4:Math.sign(laneError)*Math.sqrt(2*laneAcceleration*Math.abs(laneError));
+      const wantedLaneVelocity=clamp(lead+correction,-laneRate,laneRate);
       plan.laneVelocity+=clamp(wantedLaneVelocity-plan.laneVelocity,-laneAcceleration*dt,laneAcceleration*dt);
-      if(Math.abs(laneError)<1e-9||plan.laneVelocity*laneError>0&&Math.abs(plan.laneVelocity*dt)>Math.abs(laneError))plan.laneVelocity=laneError/dt;
+      if(blend===0&&(Math.abs(laneError)<1e-9||plan.laneVelocity*laneError>0&&Math.abs(plan.laneVelocity*dt)>Math.abs(laneError)))plan.laneVelocity=laneError/dt;
       const lateralVelocity=plan.laneVelocity+plan.lateralImpulse;
       rival.lateral+=lateralVelocity*dt;
-      rival.distance+=rival.speed*dt;
+      const alongSpeed=Math.sign(rival.speed)*Math.sqrt(Math.max(0,rival.speed**2-plan.laneVelocity**2));
+      rival.distance+=alongSpeed/scale*dt;
       // Tires scrub the sideways momentum and steer back into line over time.
       // The first movement after an impact still uses the received impulse.
       const scrub=Math.min(Math.abs(plan.lateralImpulse)*3.6,lateralGrip*grip*.78);
@@ -370,14 +463,14 @@ export class AiRace {
       const align=-15*plan.yawOffset-7*plan.yawImpulse;
       plan.yawImpulse+=clamp(align,-grip*13,grip*13)*dt;
       plan.impactRecovery=Math.max(0,plan.impactRecovery-dt);
-      const sample=this.place(rival,plan.laneVelocity,plan.yawOffset);
+      const sample=this.place(rival,plan.laneVelocity,plan.yawOffset,curve);
       rival.vx=(rival.x-x)/dt;rival.vz=(rival.z-z)/dt;
       rival.yawRate=signedAngle(rival.heading-heading)/dt;
       if(this.track.id==='monaco'&&(Math.abs(plan.lateralImpulse)>.05||Math.abs(plan.yawOffset)>.015||Math.abs(rival.lateral)>2.81)){
         this.recoverFromWall(rival,plan,sample);
       }
       plan.tires.step({
-        dt,speed:rival.speed,lateralSpeed:lateralVelocity,yawRate:rival.yawRate,steerAngle:rival.frontWheelAngle,
+        dt,speed:rival.speed,lateralSpeed:rival.vx*Math.cos(rival.heading)-rival.vz*Math.sin(rival.heading),yawRate:rival.yawRate,steerAngle:rival.frontWheelAngle,
         longitudinalDemand:drive,lateralDemand,
         longitudinalGrip:26*wet.braking,lateralGrip,weather,surface,
       });
@@ -415,17 +508,12 @@ export class AiRace {
     rival.completedLaps=Math.min(this.totalLaps,Math.floor(Math.max(0,rival.distance)/this.track.length+1e-10));
     rival.lap=Math.min(this.totalLaps,rival.completedLaps+1);
   }
-  private place(rival:AiRival,laneVelocity:number,yawOffset=0):TrackSample {
+  private place(rival:AiRival,laneVelocity:number,yawOffset=0,curve=this.curvatureAt(rival.distance)):TrackSample {
     const sample=this.track.sampleAt(rival.distance);
     rival.x=sample.point.x+sample.right.x*rival.lateral;rival.z=sample.point.z+sample.right.z*rival.lateral;
-    if(this.track.id==='monaco'){
-      const curve=this.curvatureAt(rival.distance),along=Math.max(.25,1-curve*rival.lateral),steeringLimit=this.track.steeringAngleForSpeed?.(rival.speed)??.56;
-      rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(Math.abs(rival.speed)*along,2))+yawOffset;
-      rival.frontWheelAngle=clamp(Math.atan(curve*3.1/along),-steeringLimit,steeringLimit);
-    }else{
-      rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(Math.abs(rival.speed),2))+yawOffset;
-      rival.frontWheelAngle=clamp(Math.atan(this.curvatureAt(rival.distance)*3.1),-.25,.25);
-    }
+    const steeringLimit=this.track.steeringAngleForSpeed?.(rival.speed)??.25;
+    rival.heading=Math.atan2(sample.tangent.x,sample.tangent.z)+Math.atan2(laneVelocity,Math.max(Math.abs(rival.speed),2))+yawOffset;
+    rival.frontWheelAngle=clamp(Math.atan(curve*3.1),-steeringLimit,steeringLimit);
     return sample;
   }
   standings(playerProgress:number,playerFinished=false,playerFinishTime?:number):RaceStanding[]{
@@ -468,8 +556,7 @@ export class AiRace {
     const {vx,vz,yawRate}=rival;
     resolveWallImpulse(rival,normalX,normalZ,rival.x-normalX*contactOffset,rival.z-normalZ*contactOffset);
     const dvx=rival.vx-vx,dvz=rival.vz-vz;
-    const along=Math.max(.3,1-this.curvatureAt(rival.distance)*rival.lateral);
-    rival.speed+=(dvx*tangent.x+dvz*tangent.z)/along;
+    rival.speed+=dvx*tangent.x+dvz*tangent.z;
     plan.lateralImpulse+=dvx*right.x+dvz*right.z;
     plan.yawImpulse+=rival.yawRate-yawRate;
   }
@@ -478,12 +565,12 @@ export class AiRace {
     const dx=rival.x-x,dz=rival.z-z,dvx=rival.vx-vx,dvz=rival.vz-vz,dyaw=rival.yawRate-yawRate;
     if(dx===0&&dz===0&&dvx===0&&dvz===0&&dyaw===0)return;
     const sample=this.track.sampleAt(rival.distance),{tangent,right}=sample;
-    const along=Math.max(.3,1-this.curvatureAt(rival.distance)*rival.lateral);
+    const along=laneScale(this.curvatureAt(rival.distance),rival.lateral);
     // Project only the correction/impulse. Reprojecting the full car can jump
     // to a different branch where the circuit folds back or crosses itself.
     rival.distance+=(dx*tangent.x+dz*tangent.z)/along;
     rival.lateral+=dx*right.x+dz*right.z;
-    rival.speed+=(dvx*tangent.x+dvz*tangent.z)/along;
+    rival.speed+=dvx*tangent.x+dvz*tangent.z;
     plan.lateralImpulse+=dvx*right.x+dvz*right.z;
     plan.yawImpulse+=dyaw;
     const impulse=Math.hypot(dvx,dvz)+Math.abs(dyaw);

@@ -6,7 +6,7 @@
 
 **0.15.0 · Playable Monaco and three-circuit racing.** Pocket Paddock is a chibi-style formula racing game built with Three.js, TypeScript, and Vite. Drive at Monza, Spa-Francorchamps, and Monaco in solo time trials or races against five AI rivals. Choose from 11 teams and 22 drivers, race in sunshine or rain, and play in English or Chinese with a keyboard or a standard-mapped gamepad.
 
-[Getting started](#getting-started) · [Changelog](CHANGELOG.md) · [Project submission and images](docs/SUBMISSION.md) · [Play online](https://pocket-paddock-monza.leowang8431.chatgpt.site/)
+[Getting started](#getting-started) · [Changelog](CHANGELOG.md) · [Project submission and images](docs/SUBMISSION.md) · [Play online](https://oxw9ji.gicp.fun/)
 
 ![Pocket Paddock gameplay cover](docs/submission-assets/cover.png)
 
@@ -223,7 +223,7 @@ The pit-building expansion increases each garage from 3.4 × 3 to 4.05 × 3.3 un
 
 **0.15.0 · 摩纳哥正式驾驶与三赛道比赛**。Three.js + TypeScript + Vite 制作的 Q 版方程式赛车游戏，提供蒙扎、斯帕和摩纳哥。可单人计时，也可与五辆 AI 赛车竞速。支持 11 支车队、22 位车手、晴雨两种天气、中英文界面、键盘及标准映射手柄。
 
-[启动项目](#启动) · [版本更新日志](CHANGELOG.md) · [作业项目说明与图片](docs/SUBMISSION.md) · [在线试玩](https://pocket-paddock-monza.leowang8431.chatgpt.site/)
+[启动项目](#启动) · [版本更新日志](CHANGELOG.md) · [作业项目说明与图片](docs/SUBMISSION.md) · [在线试玩](https://oxw9ji.gicp.fun/)
 
 ![Pocket Paddock 游戏实机封面](docs/submission-assets/cover.png)
 
