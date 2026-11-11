@@ -41,10 +41,12 @@ The current source version is **0.15.0**.
 - Added a standalone garage with staged lighting, selectable camera angles, and circuit maps. The team, driver, race mode, and starting tires carry into the playable race.
 - The first arrival includes the Danzhou flight, circuit trace, five sequential start lights, and the rising garage door. Later transfers depart from the current circuit. Reloading the same tab remembers the last arrival.
 - Standard-mapped controllers can navigate the garage and enter the race. The embedded game receives analog steering, throttle, and brake input and supports pausing.
+- Extended the first arrival and later circuit transfers by 18%. The first sequence takes about 5.7 seconds through the garage door opening, and later transfers take about 3.5 seconds. The garage lighting and map trace follow the slower pace, with reduced motion still supported.
 
 - 加入独立的发车指挥台，包含分段点亮的车库灯带、可切换的赛车视角和赛道地图。进入比赛时沿用所选车队、车手、模式和起步胎。
 - 首次进场包括儋州起飞、赛道描线、五盏发车灯依次点亮和车库门升起。之后从当前赛道出发，同一标签页刷新会记住上次抵达的赛道。
 - 标准映射手柄可在首页导航并发车，比赛中支持模拟转向、油门和刹车，也可用手柄暂停。
+- 首次进场和后续换赛道的动效延长 18%。首站过场到车库门开启约 5.7 秒，后续换赛道约 3.5 秒。车库灯带与地图描线也放慢，并继续遵循减少动态效果设置。
 
 ### 同版本后续优化 · 人机进站与竞速规则
 

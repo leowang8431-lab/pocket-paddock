@@ -14,6 +14,8 @@ AI tools assisted development, and playtesting feedback guided changes to gamepl
 
 ### Race Control Preview
 
+[Play Race Control online](https://oxw9ji.gicp.fun/race-control.html).
+
 Run `npm ci` and then `node scripts/build-race-control-preview.mjs`. Open `outputs/Pocket-Paddock-Race-Control-Preview.html` in Chrome or Edge. This self-contained page includes the garage and the playable game with no runtime network requests.
 
 Choose your first circuit to fly from Danzhou, Hainan, China. After the circuit trace, five start lights turn on in sequence and the garage door rises. You can select a team, driver, race mode and starting tires, then carry those settings into the race. On a standard-mapped controller, use the D-pad to navigate and change selections, and A / × to confirm. During the race, use the left stick to steer, RT / R2 to accelerate, and LT / L2 to brake.
@@ -236,6 +238,8 @@ The pit-building expansion increases each garage from 3.4 × 3 to 4.05 × 3.3 un
 本项目在 AI 工具辅助下持续迭代，通过试玩反馈完善玩法、模型、界面和性能。赛车、头盔及音频资源随项目提供，开发依赖通过 `npm ci` 安装。运行时不访问外部模型库、音频库或字体 CDN。线上 3D 渲染仍由访问者电脑完成，帧率取决于显卡、驱动、硬件加速、分辨率和画质；更换托管平台主要影响加载与访问，不会让云端替电脑渲染。
 
 ### 发车指挥台预览
+
+[在线试玩发车指挥台](https://oxw9ji.gicp.fun/race-control.html)。
 
 先运行 `npm ci`，再运行 `node scripts/build-race-control-preview.mjs`。用 Chrome 或 Edge 打开 `outputs/Pocket-Paddock-Race-Control-Preview.html`。单文件包含可操作的车库和完整比赛，运行时无需联网。
 

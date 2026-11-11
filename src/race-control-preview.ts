@@ -137,7 +137,9 @@ const local = (en: string, zh: string) => settings.language === 'zh' ? zh : en;
 const circuitName = (id: CircuitId) => local(CIRCUITS[id].name, CIRCUITS[id].zh);
 const setText = (id: string, value: string) => { element(id).textContent = value; };
 const travelLayer = element('loading');
-const travel = new TravelTransition(travelLayer, menu, () => settings.language);
+const travelDurationScale = 1.18;
+const travel = new TravelTransition(travelLayer, menu, () => settings.language, travelDurationScale);
+menu.style.setProperty('--rc-travel-duration-scale', String(travelDurationScale));
 
 function options<T extends string>(select: HTMLSelectElement, items: readonly [T, string][], selected: T) {
   select.replaceChildren(...items.map(([value, text]) => new Option(text, value, false, value === selected)));
@@ -343,7 +345,7 @@ updateLanguage();
 drawTrack();
 const firstChoice = arrival === undefined ? travel.choose(settings.circuit) : undefined;
 try {
-  stage = new RaceControlStage(element('rc-stage-canvas'), firstChoice !== undefined);
+  stage = new RaceControlStage(element('rc-stage-canvas'), firstChoice !== undefined, travelDurationScale);
   initialCar = loadCar();
 } catch {
   modelState = 'error';

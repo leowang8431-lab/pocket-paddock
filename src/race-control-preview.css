@@ -447,15 +447,15 @@ body:has(.rc-app) {
 
 .rc-track-map.is-tracing .rc-map-line {
   stroke-dasharray: 1 1;
-  animation: rc-track-draw 860ms cubic-bezier(.22, .72, .22, 1) both;
+  animation: rc-track-draw calc(860ms * var(--rc-travel-duration-scale, 1)) cubic-bezier(.22, .72, .22, 1) both;
 }
 
 .rc-track-map.is-tracing .rc-map-shadow {
-  animation: rc-map-glow 350ms 450ms ease both;
+  animation: rc-map-glow calc(350ms * var(--rc-travel-duration-scale, 1)) calc(450ms * var(--rc-travel-duration-scale, 1)) ease both;
 }
 
 .rc-track-map.is-tracing .rc-start-marker {
-  animation: rc-marker-in 350ms 480ms ease both;
+  animation: rc-marker-in calc(350ms * var(--rc-travel-duration-scale, 1)) calc(480ms * var(--rc-travel-duration-scale, 1)) ease both;
 }
 
 @keyframes rc-track-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }

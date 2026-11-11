@@ -51,7 +51,7 @@ export class RaceControlStage {
   private viewStart = -Infinity;
   private previousAngle = viewAngles.front;
 
-  constructor(private readonly host: HTMLElement, private entrancePending = false) {
+  constructor(private readonly host: HTMLElement, private entrancePending = false, private readonly entranceDurationScale = 1) {
     this.renderer = new THREE.WebGLRenderer({antialias: true, powerPreference: 'high-performance'});
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.09;
@@ -167,7 +167,7 @@ export class RaceControlStage {
   private readonly draw = (now: number) => {
     this.frameHandle = null;
     const still = this.motion.matches;
-    const introTime = still || this.entrancePending ? Infinity : now - this.introStart;
+    const introTime = still || this.entrancePending ? Infinity : (now - this.introStart) / this.entranceDurationScale;
     const selectionTime = still ? Infinity : now - this.selectionStart;
     const viewTime = still ? Infinity : now - this.viewStart;
     const intro = this.entrancePending && !still ? 0 : easeOut(clampProgress(introTime / 990));

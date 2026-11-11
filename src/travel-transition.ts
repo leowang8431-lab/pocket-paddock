@@ -8,19 +8,6 @@ const englishCountries:Record<CircuitId,string>={monza:'Italy',spa:'Belgium',mon
 const ease=(fraction:number)=>fraction*fraction*(3-2*fraction);
 const clamp=(fraction:number)=>Math.max(0,Math.min(1,fraction));
 
-function animate(duration:number,draw:(elapsed:number)=>void):Promise<void>{
-  return new Promise(resolve=>{
-    const start=performance.now();
-    function frame(now:number){
-      const elapsed=Math.min(now-start,duration);
-      draw(elapsed);
-      if(elapsed<duration)requestAnimationFrame(frame);
-      else resolve();
-    }
-    requestAnimationFrame(frame);
-  });
-}
-
 export class TravelTransition {
   private readonly flight:HTMLElement;
   private readonly route:HTMLElement;
@@ -32,7 +19,7 @@ export class TravelTransition {
   private readonly course:HTMLCanvasElement;
   private readonly lamps:HTMLElement[];
 
-  constructor(private readonly layer:HTMLElement,private readonly app:HTMLElement,private readonly getLanguage:()=>Language){
+  constructor(private readonly layer:HTMLElement,private readonly app:HTMLElement,private readonly getLanguage:()=>Language,private readonly durationScale=1){
     layer.classList.add('travel-transition');
     layer.removeAttribute('role');
     layer.removeAttribute('aria-atomic');
@@ -65,6 +52,19 @@ export class TravelTransition {
   }
 
   private get quiet(){return matchMedia('(prefers-reduced-motion: reduce)').matches;}
+  private animate(duration:number,draw:(elapsed:number)=>void):Promise<void>{
+    const durationScale=this.durationScale;
+    return new Promise(resolve=>{
+      const start=performance.now();
+      function frame(now:number){
+        const elapsed=Math.min((now-start)/durationScale,duration);
+        draw(elapsed);
+        if(elapsed<duration)requestAnimationFrame(frame);
+        else resolve();
+      }
+      requestAnimationFrame(frame);
+    });
+  }
   private local(zh:string,en:string){return this.getLanguage()==='zh'?zh:en;}
   private name(circuit:CircuitId){return this.local(CIRCUITS[circuit].zh,CIRCUITS[circuit].name);}
 
@@ -126,7 +126,7 @@ export class TravelTransition {
       this.flight.hidden=false;
       const map=createTravelMap(this.world);
       const language=this.getLanguage();
-      await animate(flightDuration(origin),elapsed=>map.paint(origin,to,elapsed,language));
+      await this.animate(flightDuration(origin),elapsed=>map.paint(origin,to,elapsed,language));
     }
 
     this.layer.dataset.travelPhase='trace';
@@ -136,7 +136,7 @@ export class TravelTransition {
     this.route.querySelector('span')!.textContent=this.local(to.locale,country);
     this.route.style.opacity='1';
     if(this.quiet)paintCircuitOutline(this.course,circuit,1);
-    else await animate(920,elapsed=>{
+    else await this.animate(920,elapsed=>{
       this.route.style.opacity=String(ease(clamp(elapsed/150)));
       paintCircuitOutline(this.course,circuit,clamp((elapsed-100)/820));
     });
@@ -150,17 +150,17 @@ export class TravelTransition {
     if(first&&!this.quiet){
       this.door.hidden=false;
       this.door.querySelector('.travel-door-note')!.textContent=this.local(`${this.name(circuit)}车库已就绪`,`${this.name(circuit)} garage ready`);
-      await animate(210,elapsed=>{this.route.style.opacity=String(1-elapsed/210);});
+      await this.animate(210,elapsed=>{this.route.style.opacity=String(1-elapsed/210);});
       this.route.hidden=true;
       this.splash.hidden=true;
       this.layer.dataset.travelPhase='garage';
-      await animate(1470,elapsed=>{
+      await this.animate(1470,elapsed=>{
         this.lamps.forEach((lamp,index)=>lamp.classList.toggle('lit',elapsed>=100+index*183));
         this.door.style.transform=`translate3d(0,${-103*ease(clamp((elapsed-1050)/420))}%,0)`;
       });
     }else if(!this.route.hidden&&!this.quiet){
       this.layer.dataset.travelPhase='reveal';
-      await animate(260,elapsed=>{this.route.style.opacity=String(1-ease(elapsed/260));});
+      await this.animate(260,elapsed=>{this.route.style.opacity=String(1-ease(elapsed/260));});
     }
     this.hide();
   }
