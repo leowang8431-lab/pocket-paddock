@@ -36,6 +36,16 @@ The current source version is **0.15.0**.
 - 抵达时高亮目的地国家并描出赛道。首站车库就绪后，五盏发车灯依次点亮，车库门升起。
 - 地图支持离线使用。进场界面支持中英文，并遵循浏览器的减少动态效果设置。
 
+### 发车指挥台预览 · Race Control Preview
+
+- Added a standalone garage with staged lighting, selectable camera angles, and circuit maps. The team, driver, race mode, and starting tires carry into the playable race.
+- The first arrival includes the Danzhou flight, circuit trace, five sequential start lights, and the rising garage door. Later transfers depart from the current circuit. Reloading the same tab remembers the last arrival.
+- Standard-mapped controllers can navigate the garage and enter the race. The embedded game receives analog steering, throttle, and brake input and supports pausing.
+
+- 加入独立的发车指挥台，包含分段点亮的车库灯带、可切换的赛车视角和赛道地图。进入比赛时沿用所选车队、车手、模式和起步胎。
+- 首次进场包括儋州起飞、赛道描线、五盏发车灯依次点亮和车库门升起。之后从当前赛道出发，同一标签页刷新会记住上次抵达的赛道。
+- 标准映射手柄可在首页导航并发车，比赛中支持模拟转向、油门和刹车，也可用手柄暂停。
+
 ### 同版本后续优化 · 人机进站与竞速规则
 
 - AI 结合实际磨损、剩余距离和预计进站损失比较立刻换胎、延后换胎与继续比赛。需要换胎时，AI 驶入对应车位，停车服务 2–4 秒，限速驶出并观察合流车流。晴天按后续赛程选择干地胎，雨天换雨胎。
